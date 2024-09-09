@@ -38,9 +38,9 @@ function checkForYouTubeAds() {
             handleAdEnd();
         }
 
-        // if (isAdPlaying && skipButton) {
-        //     attemptSkipAd(skipButton);
-        // }
+        if (isAdPlaying && skipButton) {
+            attemptSkipAd(skipButton);
+        }
     } catch (error) {
         console.log('Error checking for YouTube ads:', error);
         handleExtensionError(error);
@@ -49,40 +49,42 @@ function checkForYouTubeAds() {
 
 function handleAdStart() {
     console.log('Ad detected, muting tab');
-    chrome.runtime.sendMessage({ action: 'muteTab' }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.log('Error muting tab:', chrome.runtime.lastError.message);
-            handleExtensionError(chrome.runtime.lastError);
-        } else {
-            console.log('Tab muted');
-            isMuted = true;
-        }
-    });
+    chrome.runtime.sendMessage({ action: 'muteTab' })
+        .then(response => {
+            if (response.success) {
+                console.log('Tab muted');
+                isMuted = true;
+            } else {
+                console.log('Failed to mute tab:', response.error);
+            }
+        })
+        .catch(error => console.log('Error sending mute message:', error));
 }
 
 function handleAdEnd() {
     console.log('Ad ended, unmuting tab');
-    chrome.runtime.sendMessage({ action: 'unmuteTab' }, (response) => {
-        if (chrome.runtime.lastError) {
-            console.log('Error unmuting tab:', chrome.runtime.lastError.message);
-            handleExtensionError(chrome.runtime.lastError);
-        } else {
-            console.log('Tab unmuted');
-            isMuted = false;
-        }
-    });
+    chrome.runtime.sendMessage({ action: 'unmuteTab' })
+        .then(response => {
+            if (response.success) {
+                console.log('Tab unmuted');
+                isMuted = false;
+            } else {
+                console.log('Failed to unmute tab:', response.error);
+            }
+        })
+        .catch(error => console.log('Error sending unmute message:', error));
 }
 
 function attemptSkipAd(skipButton) {
-    // if (skipButton && skipButton.offsetParent !== null) {
-    //     console.log('Skip button detected, attempting to click');
-    //     try {
-    //         skipButton.click();
-    //         console.log('Skip button clicked');
-    //     } catch (clickError) {
-    //         console.log('Error clicking skip button:', clickError);
-    //     }
-    // }
+    if (skipButton && skipButton.offsetParent !== null) {
+        console.log('Skip button detected, attempting to click');
+        try {
+            skipButton.click();
+            console.log('Skip button clicked');
+        } catch (clickError) {
+            console.log('Error clicking skip button:', clickError);
+        }
+    }
 }
 
 function handleExtensionError(error) {
@@ -90,7 +92,7 @@ function handleExtensionError(error) {
         console.log('Extension context invalidated. Reloading ad detection.');
         stopAdDetection();
         setTimeout(() => {
-            setup();
+            initAdDetection();
         }, 1000);
     }
 }
@@ -121,21 +123,6 @@ function stopAdDetection() {
     console.log('Ad detection stopped');
 }
 
-// Initial setup
-function setup() {
-    initAdDetection();
-    // Check for ads every second as a fallback
-    setInterval(checkForYouTubeAds, 1000);
-}
-
-function initializeExtension() {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setup);
-    } else {
-        setup();
-    }
-}
-
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'toggleAdMuter') {
@@ -151,16 +138,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Initial load
-initializeExtension();
+initAdDetection();
 
-// Handle potential extension context invalidation
-window.addEventListener('error', (event) => {
-    if (event.error.message.includes('Extension context invalidated')) {
-        console.log('Extension context invalidated. Attempting to reinitialize...');
-        reinitializeExtension();
-    }
-});
+// Check for ads every second as a fallback
+setInterval(checkForYouTubeAds, 1000);
 
 console.log('YouTube content script loaded');
-
-
