@@ -2,6 +2,7 @@ let adObserver = null;
 let isEnabled = true;
 let isMuted = false;
 let isAdPlaying = false;
+let adStartTime = 0;
 
 // Load the saved state
 chrome.storage.sync.get(['adMuterEnabled'], (result) => {
@@ -27,11 +28,13 @@ function checkForYouTubeAds() {
             skipButton: !!skipButton, 
             adText: !!adText,
             adDisplayContainer: !!adDisplayContainer,
-            isAdPlaying: newAdPlaying
+            newAdPlaying: newAdPlaying,
+            currentAdPlayingState: isAdPlaying
         });
 
         if (newAdPlaying && !isAdPlaying) {
             isAdPlaying = true;
+            adStartTime = Date.now();
             handleAdStart();
         } else if (!newAdPlaying && isAdPlaying) {
             isAdPlaying = false;
@@ -48,52 +51,110 @@ function checkForYouTubeAds() {
 }
 
 function handleAdStart() {
-    console.log('Ad detected, muting tab');
+    console.log('Ad detected, attempting to mute tab');
     chrome.runtime.sendMessage({ action: 'muteTab' })
         .then(response => {
-            if (response.success) {
-                console.log('Tab muted');
+            if (response && response.success) {
+                console.log('Tab muted successfully');
                 isMuted = true;
             } else {
-                console.log('Failed to mute tab:', response.error);
+                console.log('Failed to mute tab:', response ? response.error : 'Unknown error');
             }
         })
-        .catch(error => console.log('Error sending mute message:', error));
+        .catch(error => {
+            console.log('Error sending mute message:', error);
+            handleExtensionError(error);
+        });
 }
 
 function handleAdEnd() {
-    console.log('Ad ended, unmuting tab');
+    console.log('Ad ended, attempting to unmute tab');
     chrome.runtime.sendMessage({ action: 'unmuteTab' })
         .then(response => {
-            if (response.success) {
-                console.log('Tab unmuted');
+            if (response && response.success) {
+                console.log('Tab unmuted successfully');
                 isMuted = false;
+                updateMetrics();
             } else {
-                console.log('Failed to unmute tab:', response.error);
+                console.log('Failed to unmute tab:', response ? response.error : 'Unknown error');
             }
         })
-        .catch(error => console.log('Error sending unmute message:', error));
+        .catch(error => {
+            console.log('Error sending unmute message:', error);
+            handleExtensionError(error);
+        });
+}
+
+function updateMetrics() {
+    const muteDuration = Math.round((Date.now() - adStartTime) / 1000);
+    chrome.runtime.sendMessage({ 
+        action: 'updateMetrics', 
+        muteDuration: muteDuration
+    });
 }
 
 function attemptSkipAd(skipButton) {
     if (skipButton && skipButton.offsetParent !== null) {
-        console.log('Skip button detected, attempting to click');
-        try {
-            skipButton.click();
-            console.log('Skip button clicked');
-        } catch (clickError) {
-            console.log('Error clicking skip button:', clickError);
+        console.log('Skip button detected, attempting to skip');
+        
+        const skipMethods = [
+            () => skipButton.click(),
+            () => skipButton.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+            () => {
+                const rect = skipButton.getBoundingClientRect();
+                skipButton.dispatchEvent(new MouseEvent('click', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: rect.left + rect.width / 2,
+                    clientY: rect.top + rect.height / 2
+                }));
+            }
+        ];
+
+        let attemptCount = 0;
+        const maxAttempts = 5;
+
+        function trySkip() {
+            if (attemptCount >= maxAttempts) {
+                console.log('Max skip attempts reached. Unable to skip ad.');
+                return;
+            }
+
+            const method = skipMethods[attemptCount % skipMethods.length];
+            try {
+                method();
+                console.log('Skip attempt made');
+            } catch (error) {
+                console.log('Error during skip attempt:', error);
+            }
+
+            // Check if ad is still playing after a short delay
+            setTimeout(() => {
+                if (document.querySelector('.ad-showing')) {
+                    console.log('Ad still playing. Retrying skip...');
+                    attemptCount++;
+                    trySkip();
+                } else {
+                    console.log('Ad skipped successfully');
+                }
+            }, 500);
         }
+
+        trySkip();
     }
 }
 
 function handleExtensionError(error) {
+    console.log('Handling extension error:', error);
     if (error.message.includes('Extension context invalidated')) {
         console.log('Extension context invalidated. Reloading ad detection.');
         stopAdDetection();
         setTimeout(() => {
             initAdDetection();
         }, 1000);
+    } else if (error.message.includes('Permission denied')) {
+        console.log('Permission denied error. This may affect some functionality.');
     }
 }
 
@@ -105,14 +166,25 @@ function initAdDetection() {
         checkForYouTubeAds();
     });
     const config = { childList: true, subtree: true };
-    const playerContainer = document.querySelector('#player-container');
-    if (playerContainer) {
-        adObserver.observe(playerContainer, config);
-    } else {
-        adObserver.observe(document.body, config);
+
+    function observePlayer() {
+        const playerContainer = document.querySelector('#player-container');
+        if (playerContainer) {
+            adObserver.observe(playerContainer, config);
+            console.log('Observing player container');
+        } else {
+            console.log('Player container not found, observing body');
+            adObserver.observe(document.body, config);
+        }
+        checkForYouTubeAds(); // Initial check
+        console.log('Ad detection initialized');
     }
-    checkForYouTubeAds(); // Initial check
-    console.log('Ad detection initialized');
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', observePlayer);
+    } else {
+        observePlayer();
+    }
 }
 
 function stopAdDetection() {
