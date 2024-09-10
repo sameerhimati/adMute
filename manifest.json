@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "Ad Muter",
-    "version": "1.0",
-    "description": "Automatically mutes tabs during ads and unmutes them when ads are finished.",
+    "version": "1.1",
+    "description": "Automatically mutes tabs during ads on YouTube, Hulu, and other streaming services.",
     "permissions": ["tabs", "activeTab", "scripting", "storage"],
     "host_permissions": ["<all_urls>"],
     "background": {
@@ -15,8 +15,13 @@
         "run_at": "document_start"
       },
       {
+        "matches": ["*://*.hulu.com/*"],
+        "js": ["hulu-content.js"],
+        "run_at": "document_start"
+      },
+      {
         "matches": ["<all_urls>"],
-        "exclude_matches": ["*://*.youtube.com/*"],
+        "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*"],
         "js": ["general-content.js"],
         "run_at": "document_start"
       }
