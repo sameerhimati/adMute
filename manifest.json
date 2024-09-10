@@ -1,51 +1,50 @@
 {
-    "manifest_version": 3,
-    "name": "Ad Mute",
-    "version": "1.1",
-    "description": "Automatically mutes tabs during ads on YouTube, Hulu, and other streaming services.",
-    "permissions": [
-        "tabs",
-        "activeTab",
-        "scripting",
-        "storage",
-        "alarms"
-    ],
-    "host_permissions": [
-        "<all_urls>",
-        "http://localhost:5000/"
-    ],
-    "background": {
-        "service_worker": "extension/background.js"
+  "manifest_version": 3,
+  "name": "Ad Mute",
+  "version": "1.1",
+  "description": "Automatically mutes tabs during ads on YouTube, Hulu, and other streaming services.",
+  "permissions": [
+      "tabs",
+      "activeTab",
+      "scripting",
+      "storage",
+      "alarms"
+  ],
+  "host_permissions": [
+      "<all_urls>"
+  ],
+  "background": {
+      "service_worker": "extension/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.youtube.com/*"],
+      "js": ["extension/content-scripts/youtube-content.js"],
+      "run_at": "document_start"
     },
-    "content_scripts": [
-      {
-        "matches": ["*://*.youtube.com/*"],
-        "js": ["extension/content-scripts/youtube-content.js"],
-        "run_at": "document_start"
-      },
-      {
-        "matches": ["*://*.hulu.com/*"],
-        "js": ["extension/content-scripts/hulu-content.js"],
-        "run_at": "document_start"
-      },
-      {
-        "matches": ["<all_urls>"],
-        "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*"],
-        "js": ["extension/content-scripts/general-content.js"],
-        "run_at": "document_start"
-      }
-    ],
-    "action": {
-      "default_popup": "extension/popup/popup.html",
-      "default_icon": {
-        "16": "icons/icon16.png",
-        "48": "icons/icon48.png",
-        "128": "icons/icon128.png"
-      }
+    {
+      "matches": ["*://*.hulu.com/*"],
+      "js": ["extension/content-scripts/hulu-content.js"],
+      "run_at": "document_start"
     },
-    "icons": {
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*"],
+      "js": ["extension/content-scripts/general-content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_popup": "extension/popup/popup.html",
+    "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }

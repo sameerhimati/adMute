@@ -1,19 +1,28 @@
-let timeMuted = 0;
-let adsMuted = 0;
 let userId;
 const SERVER_URL = 'http://localhost:5000'; // Change this to your actual server URL when deployed
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Ad Muter extension installed');
     userId = generateUserId();
-    chrome.storage.sync.set({ adMuterEnabled: true, timeMuted: 0, adsMuted: 0, userId: userId }, () => {
-        console.log('Ad Muter enabled by default, metrics initialized');
+    chrome.storage.sync.set({ adMuterEnabled: true, userId: userId }, () => {
+        console.log('Ad Muter enabled by default, user ID set');
     });
+    initializeMetrics();
     scheduleDataSync();
 });
 
 function generateUserId() {
     return 'user_' + Math.random().toString(36).substr(2, 9);
+}
+
+function initializeMetrics() {
+    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
+        if (result.timeMuted === undefined || result.adsMuted === undefined) {
+            chrome.storage.sync.set({ timeMuted: 0, adsMuted: 0 }, () => {
+                console.log('Metrics initialized');
+            });
+        }
+    });
 }
 
 function scheduleDataSync() {
@@ -73,16 +82,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         return true; // Indicates that the response is sent asynchronously
     } else if (request.action === 'updateMetrics') {
-        timeMuted += request.muteDuration;
-        adsMuted += 1;
-        chrome.storage.sync.set({ timeMuted, adsMuted }, () => {
-            console.log('Metrics updated:', { timeMuted, adsMuted });
+        chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
+            const newTimeMuted = (result.timeMuted || 0) + request.muteDuration;
+            const newAdsMuted = (result.adsMuted || 0) + 1;
+            chrome.storage.sync.set({ timeMuted: newTimeMuted, adsMuted: newAdsMuted }, () => {
+                console.log('Metrics updated:', { timeMuted: newTimeMuted, adsMuted: newAdsMuted });
+                sendResponse({ success: true });
+            });
         });
-        sendResponse({ success: true });
-        return true;
+        return true; // Indicates that the response is sent asynchronously
     } else if (request.action === 'getMetrics') {
-        sendResponse({ timeMuted, adsMuted });
-        return true;
+        chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
+            sendResponse({ timeMuted: result.timeMuted || 0, adsMuted: result.adsMuted || 0 });
+        });
+        return true; // Indicates that the response is sent asynchronously
     } else if (request.action === 'sendFeedback') {
         chrome.storage.sync.get(['userId'], (data) => {
             fetch(`${SERVER_URL}/api/data`, {

@@ -4,9 +4,10 @@ const SERVER_URL = 'http://localhost:5000'; // This should match background.js
 document.addEventListener('DOMContentLoaded', () => {
     const toggleButton = document.getElementById('adMuterToggle');
     const statusSpan = document.getElementById('statusText');
-    const feedbackBtn = document.getElementById('feedbackBtn');
-    const feedbackForm = document.getElementById('feedbackForm');
-    const submitFeedback = document.getElementById('submitFeedback');
+    // Commented out feedback-related elements
+    // const feedbackBtn = document.getElementById('feedbackBtn');
+    // const feedbackForm = document.getElementById('feedbackForm');
+    // const submitFeedback = document.getElementById('submitFeedback');
 
     // Load the saved state
     chrome.storage.sync.get(['adMuterEnabled'], (result) => {
@@ -41,6 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Commented out feedback-related event listeners
+    /*
     feedbackBtn.addEventListener('click', () => {
         feedbackForm.classList.toggle('hidden');
     });
@@ -64,22 +67,19 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+    */
 
     updateMetrics();
 });
 
 function updateMetrics() {
-    chrome.runtime.sendMessage({ action: 'getMetrics' }, (response) => {
-        if (response) {
-            const timeMuted = response.timeMuted || 0;
-            const adsMuted = response.adsMuted || 0;
-            
-            document.getElementById('timeMuted').textContent = formatTime(timeMuted);
-            document.getElementById('adsMuted').textContent = adsMuted;
-            document.getElementById('timeSaved').textContent = formatTime(timeMuted * 0.8); // Assuming 80% of muted time is saved
-        } else {
-            console.error('Error getting metrics');
-        }
+    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
+        const timeMuted = result.timeMuted || 0;
+        const adsMuted = result.adsMuted || 0;
+        
+        document.getElementById('timeMuted').textContent = formatTime(timeMuted);
+        document.getElementById('adsMuted').textContent = adsMuted;
+        document.getElementById('timeSaved').textContent = formatTime(Math.round(timeMuted * 0.8)); // Assuming 80% of muted time is saved
     });
 }
 

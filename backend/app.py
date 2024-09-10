@@ -12,7 +12,6 @@ class UserData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.String(50), nullable=False)
     ip_address = db.Column(db.String(50), nullable=False)
-    feedback = db.Column(db.Text, nullable=True)
     ads_muted = db.Column(db.Integer, default=0)
     total_mute_duration = db.Column(db.Integer, default=0)  # in seconds
     last_updated = db.Column(db.DateTime, default=datetime.utcnow)
@@ -21,7 +20,6 @@ class UserData(db.Model):
         return {
             'user_id': self.user_id,
             'ip_address': self.ip_address,
-            'feedback': self.feedback,
             'ads_muted': self.ads_muted,
             'total_mute_duration': self.total_mute_duration,
             'last_updated': self.last_updated.isoformat()
@@ -29,29 +27,17 @@ class UserData(db.Model):
 
 @app.route('/api/data', methods=['POST'])
 def receive_data():
+    # This route is kept for potential future use, but won't be called by the extension for now
     data = request.json
-    user_data = UserData.query.filter_by(user_id=data['user_id']).first()
-    
-    if user_data:
-        user_data.ip_address = request.remote_addr
-        user_data.ads_muted = data['ads_muted']
-        user_data.total_mute_duration = data['total_mute_duration']
-        if 'feedback' in data and data['feedback']:
-            user_data.feedback = data['feedback']
-        user_data.last_updated = datetime.utcnow()
-    else:
-        user_data = UserData(
-            user_id=data['user_id'],
-            ip_address=request.remote_addr,
-            ads_muted=data['ads_muted'],
-            total_mute_duration=data['total_mute_duration'],
-            feedback=data.get('feedback', None)
-        )
-        db.session.add(user_data)
-    
-    db.session.commit()
+    # Process data here if needed
     return jsonify({'status': 'success'}), 200
 
+def init_db():
+    with app.app_context():
+        db.create_all()
+
 if __name__ == '__main__':
-    db.create_all()
+    init_db()
     app.run(debug=True)
+
+print("Server is ready, but not connected to the extension.")
