@@ -1,12 +1,43 @@
 let timeMuted = 0;
 let adsMuted = 0;
+let userId;
+const SERVER_URL = 'http://localhost:5000'; // Change this to your actual server URL when deployed
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Ad Muter extension installed');
-    chrome.storage.sync.set({ adMuterEnabled: true, timeMuted: 0, adsMuted: 0 }, () => {
+    userId = generateUserId();
+    chrome.storage.sync.set({ adMuterEnabled: true, timeMuted: 0, adsMuted: 0, userId: userId }, () => {
         console.log('Ad Muter enabled by default, metrics initialized');
     });
+    scheduleDataSync();
 });
+
+function generateUserId() {
+    return 'user_' + Math.random().toString(36).substr(2, 9);
+}
+
+function scheduleDataSync() {
+    setInterval(sendDataToServer, 15 * 60 * 1000); // Send data every 15 minutes
+}
+
+function sendDataToServer() {
+    chrome.storage.sync.get(['userId', 'timeMuted', 'adsMuted'], (data) => {
+        fetch(`${SERVER_URL}/api/data`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                user_id: data.userId,
+                ads_muted: data.adsMuted,
+                total_mute_duration: data.timeMuted,
+            }),
+        })
+        .then(response => response.json())
+        .then(result => console.log('Data sent successfully:', result))
+        .catch(error => console.error('Error sending data:', error));
+    });
+}
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'muteTab') {
@@ -52,6 +83,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (request.action === 'getMetrics') {
         sendResponse({ timeMuted, adsMuted });
         return true;
+    } else if (request.action === 'sendFeedback') {
+        chrome.storage.sync.get(['userId'], (data) => {
+            fetch(`${SERVER_URL}/api/data`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    user_id: data.userId,
+                    feedback: request.feedback,
+                }),
+            })
+            .then(response => response.json())
+            .then(result => {
+                console.log('Feedback sent successfully:', result);
+                sendResponse({success: true});
+            })
+            .catch(error => {
+                console.error('Error sending feedback:', error);
+                sendResponse({success: false, error: error.message});
+            });
+        });
+        return true; // Indicates that the response is sent asynchronously
     }
 });
 

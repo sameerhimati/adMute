@@ -1,4 +1,5 @@
 let enabled = true;
+const SERVER_URL = 'http://localhost:5000'; // This should match background.js
 
 document.addEventListener('DOMContentLoaded', () => {
     const toggleButton = document.getElementById('adMuterToggle');
@@ -47,12 +48,20 @@ document.addEventListener('DOMContentLoaded', () => {
     submitFeedback.addEventListener('click', () => {
         const feedbackText = document.getElementById('feedbackText').value;
         if (feedbackText.trim() !== '') {
-            // Send feedback to your server or email
-            console.log('Feedback submitted:', feedbackText);
-            // You can implement the actual submission logic here
-            feedbackForm.classList.add('hidden');
-            document.getElementById('feedbackText').value = '';
-            alert('Thank you for your feedback!');
+            chrome.runtime.sendMessage({
+                action: 'sendFeedback',
+                feedback: feedbackText
+            }, (response) => {
+                if (response && response.success) {
+                    console.log('Feedback submitted successfully');
+                    feedbackForm.classList.add('hidden');
+                    document.getElementById('feedbackText').value = '';
+                    alert('Thank you for your feedback!');
+                } else {
+                    console.error('Error submitting feedback:', response ? response.error : 'Unknown error');
+                    alert('There was an error submitting your feedback. Please try again later.');
+                }
+            });
         }
     });
 
@@ -60,13 +69,17 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updateMetrics() {
-    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
-        const timeMuted = result.timeMuted || 0;
-        const adsMuted = result.adsMuted || 0;
-        
-        document.getElementById('timeMuted').textContent = formatTime(timeMuted);
-        document.getElementById('adsMuted').textContent = adsMuted;
-        document.getElementById('timeSaved').textContent = formatTime(timeMuted * 0.8); // Assuming 80% of muted time is saved
+    chrome.runtime.sendMessage({ action: 'getMetrics' }, (response) => {
+        if (response) {
+            const timeMuted = response.timeMuted || 0;
+            const adsMuted = response.adsMuted || 0;
+            
+            document.getElementById('timeMuted').textContent = formatTime(timeMuted);
+            document.getElementById('adsMuted').textContent = adsMuted;
+            document.getElementById('timeSaved').textContent = formatTime(timeMuted * 0.8); // Assuming 80% of muted time is saved
+        } else {
+            console.error('Error getting metrics');
+        }
     });
 }
 
