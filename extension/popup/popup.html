@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ad Muter</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="container">
         <h1>Ad Muter</h1>
+        
         <div class="toggle-container">
             <label class="toggle">
                 <input type="checkbox" id="adMuterToggle">
                 <span class="slider"></span>
             </label>
-            <span class="status" id="statusText">Inactive</span>
+            <span id="statusText" class="status">Inactive</span>
         </div>
+        
         <div class="metrics">
             <div class="metric">
                 <span>Muted this month:</span>
@@ -31,14 +32,12 @@
                 <span id="timeSaved">0s</span>
             </div>
         </div>
-        <!-- Feedback feature commented out
-        <button id="feedbackBtn" class="feedback-btn">Give Feedback</button>
-        <div id="feedbackForm" class="feedback-form hidden">
-            <textarea id="feedbackText" placeholder="Your feedback here..."></textarea>
-            <button id="submitFeedback">Submit</button>
+        
+        <div class="supported-services">
+            Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max
         </div>
-        -->
     </div>
+    
     <script src="popup.js"></script>
 </body>
 </html>

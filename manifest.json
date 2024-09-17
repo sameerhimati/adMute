@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Ad Mute",
-  "version": "1.1",
-  "description": "Automatically mutes tabs during ads on YouTube, Hulu, and other streaming services.",
+  "version": "1.2",
+  "description": "Automatically mutes tabs during ads on YouTube, Hulu, Peacock, Paramount+, HBO Max, and other streaming services.",
   "permissions": [
       "tabs",
       "activeTab",
@@ -28,8 +28,23 @@
       "run_at": "document_start"
     },
     {
+      "matches": ["*://*.peacocktv.com/*"],
+      "js": ["extension/content-scripts/peacock-content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.paramountplus.com/*"],
+      "js": ["extension/content-scripts/paramount-content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.hbomax.com/*"],
+      "js": ["extension/content-scripts/hbomax-content.js"],
+      "run_at": "document_start"
+    },
+    {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*"],
+      "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*", "*://*.peacocktv.com/*", "*://*.paramountplus.com/*", "*://*.hbomax.com/*"],
       "js": ["extension/content-scripts/general-content.js"],
       "run_at": "document_start"
     }
