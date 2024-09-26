@@ -44,8 +44,13 @@
     },
     {
       "matches": ["<all_urls>"],
-      "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*", "*://*.peacocktv.com/*", "*://*.paramountplus.com/*", "*://*.hbomax.com/*"],
+      "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*", "*://*.peacocktv.com/*", "*://*.paramountplus.com/*", "*://*.hbomax.com/*", "*://*.twitch.tv/*"],
       "js": ["extension/content-scripts/general-content.js"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.twitch.tv/*"],
+      "js": ["extension/content-scripts/twitch-content.js"],
       "run_at": "document_start"
     }
   ],

@@ -4,7 +4,7 @@ Ad Muter is a Chrome extension that automatically mutes ads and attempts to skip
 
 ## Features
 
-- Automatically mutes ads on YouTube, Hulu, Peacock, Paramount+, and HBO Max
+- Automatically mutes ads on YouTube, Hulu, Peacock, Paramount+, HBO Max, and Twitch
 - Attempts to skip ads when a skip button is available
 - Tracks time saved and number of ads muted
 - Simple toggle to enable/disable the extension
