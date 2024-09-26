@@ -1,20 +1,25 @@
-.DS_Store
-
+# Ignore environment variables
+.env
 .venv/
 
-.env
-
 package-lock.json
-
-node_modules
-
 package.json
 
-yarn.lock
+# Ignore node modules
+node_modules/
 
-pnpm-lock.yaml
+# Ignore build artifacts
+build/
+dist/
 
-bun.lockb
+# Ignore IDE-specific files
+.vscode/
+.idea/
 
+# Ignore logs
+*.log
+
+# Ignore config.js (contains sensitive information)
 config.js
 
+.DS_Store
