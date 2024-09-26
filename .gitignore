@@ -3,3 +3,18 @@
 .venv/
 
 .env
+
+package-lock.json
+
+node_modules
+
+package.json
+
+yarn.lock
+
+pnpm-lock.yaml
+
+bun.lockb
+
+config.js
+
