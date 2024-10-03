@@ -14,48 +14,48 @@
       "<all_urls>"
   ],
   "background": {
-      "service_worker": "extension/background.js"
+      "service_worker": "background.js"
   },
   "content_scripts": [
     {
       "matches": ["*://*.youtube.com/*"],
-      "js": ["extension/content-scripts/youtube-content.js"],
+      "js": ["content-scripts/youtube-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["*://*.hulu.com/*"],
-      "js": ["extension/content-scripts/hulu-content.js"],
+      "js": ["content-scripts/hulu-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["*://*.peacocktv.com/*"],
-      "js": ["extension/content-scripts/peacock-content.js"],
+      "js": ["content-scripts/peacock-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["*://*.paramountplus.com/*"],
-      "js": ["extension/content-scripts/paramount-content.js"],
+      "js": ["content-scripts/paramount-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["*://*.hbomax.com/*"],
-      "js": ["extension/content-scripts/hbomax-content.js"],
+      "js": ["content-scripts/hbomax-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["<all_urls>"],
       "exclude_matches": ["*://*.youtube.com/*", "*://*.hulu.com/*", "*://*.peacocktv.com/*", "*://*.paramountplus.com/*", "*://*.hbomax.com/*", "*://*.twitch.tv/*"],
-      "js": ["extension/content-scripts/general-content.js"],
+      "js": ["content-scripts/general-content.js"],
       "run_at": "document_start"
     },
     {
       "matches": ["*://*.twitch.tv/*"],
-      "js": ["extension/content-scripts/twitch-content.js"],
+      "js": ["content-scripts/twitch-content.js"],
       "run_at": "document_start"
     }
   ],
   "action": {
-    "default_popup": "extension/popup/popup.html",
+    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

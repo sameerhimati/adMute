@@ -2,6 +2,9 @@
 .env
 .venv/
 
+config.py
+__pycache__
+
 package-lock.json
 package.json
 
@@ -23,3 +26,5 @@ dist/
 config.js
 
 .DS_Store
+
+migrations/
