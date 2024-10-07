@@ -14,7 +14,8 @@
       "<all_urls>"
   ],
   "background": {
-      "service_worker": "background.js"
+      "service_worker": "background.js",
+      "type": "module"
   },
   "content_scripts": [
     {
@@ -54,6 +55,15 @@
       "run_at": "document_start"
     }
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["crypto-utils.js"],
+      "matches": ["<all_urls>"]
+    }
+],
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {

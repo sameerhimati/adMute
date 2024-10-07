@@ -3,41 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ad Muter</title>
+    <title>Ad Mute</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="container">
-        <h1>Ad Muter</h1>
+        <h1>Ad Mute</h1>
         
-        <div class="toggle-container">
-            <label class="toggle">
-                <input type="checkbox" id="adMuterToggle">
-                <span class="slider"></span>
-            </label>
-            <span id="statusText" class="status">Inactive</span>
+        <div id="loginForm" class="auth-form">
+            <h2>Login</h2>
+            <input type="text" id="loginUsername" placeholder="Username" required>
+            <input type="password" id="loginPassword" placeholder="Password" required>
+            <button id="loginButton">Login</button>
+            <p>Don't have an account? <a href="#" id="showRegister">Register</a></p>
         </div>
-        
-        <div class="metrics">
-            <div class="metric">
-                <span>Muted this month:</span>
-                <span id="timeMuted">0s</span>
-            </div>
-            <div class="metric">
-                <span>Ads muted:</span>
-                <span id="adsMuted">0</span>
-            </div>
-            <div class="metric">
-                <span>Estimated time saved:</span>
-                <span id="timeSaved">0s</span>
-            </div>
+
+        <div id="registerForm" class="auth-form hidden">
+            <h2>Register</h2>
+            <input type="text" id="registerUsername" placeholder="Username" required>
+            <input type="email" id="registerEmail" placeholder="Email" required>
+            <input type="password" id="registerPassword" placeholder="Password" required>
+            <button id="registerButton">Register</button>
+            <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
         </div>
-        
-        <div class="supported-services">
-            Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch
+
+        <div id="userInfo" class="hidden">
+            <h2>Welcome, <span id="username"></span>!</h2>
+            <button id="logoutButton">Logout</button>
+        </div>
+
+        <div id="adMuterControls" class="hidden">
+            <div class="toggle-container">
+                <label class="toggle">
+                    <input type="checkbox" id="adMuterToggle">
+                    <span class="slider"></span>
+                </label>
+                <span id="statusText" class="status">Inactive</span>
+            </div>
+
+            <div class="metrics">
+                <div class="metric">
+                    Muted this month: <span id="timeMuted">0s</span>
+                </div>
+                <div class="metric">
+                    Ads muted: <span id="adsMuted">0</span>
+                </div>
+                <div class="metric">
+                    Estimated time saved: <span id="timeSaved">0s</span>
+                </div>
+            </div>
+
+            <div class="supported-services">
+                Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch
+            </div>
         </div>
     </div>
-    
-    <script src="popup.js"></script>
+    <script type="module" src="popup.js"></script>
 </body>
 </html>
