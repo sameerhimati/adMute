@@ -1,5 +1,5 @@
 let adObserver = null;
-let isEnabled = true;
+let isEnabled = false;
 let isMuted = false;
 let isAdPlaying = false;
 let adStartTime = 0;
@@ -10,6 +10,10 @@ chrome.storage.sync.get(['adMuterEnabled'], (result) => {
     if (isEnabled) {
         initAdDetection();
     }
+});
+
+chrome.runtime.sendMessage({action: 'getAdMuterState'}, (response) => {
+    isEnabled = response.isEnabled;
 });
 
 function checkForYouTubeAds() {
@@ -51,6 +55,10 @@ function checkForYouTubeAds() {
 }
 
 function handleAdStart() {
+
+    if (!isEnabled) return;
+
+    
     console.log('Ad detected, attempting to mute tab');
     chrome.runtime.sendMessage({ action: 'muteTab' })
         .then(response => {

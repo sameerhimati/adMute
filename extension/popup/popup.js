@@ -9,29 +9,52 @@ import {
     registerDevice
 } from '../api.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const loginView = document.getElementById('loginView');
     const registerView = document.getElementById('registerView');
     const userView = document.getElementById('userView');
-    
     const showRegisterLink = document.getElementById('showRegister');
     const showLoginLink = document.getElementById('showLogin');
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
     const logoutButton = document.getElementById('logoutButton');
     const toggleButton = document.getElementById('adMuterToggle');
-    
+    const subscribeBtn = document.getElementById('subscribeBtn');
+
     showRegisterLink.addEventListener('click', () => showView(registerView));
     showLoginLink.addEventListener('click', () => showView(loginView));
     loginForm.addEventListener('submit', handleLogin);
     registerForm.addEventListener('submit', handleRegister);
     logoutButton.addEventListener('click', handleLogout);
     toggleButton.addEventListener('change', handleToggle);
-    document.getElementById('subscribeBtn').addEventListener('click', handleSubscribe);
-    
-    checkAuthStatus();
+    subscribeBtn.addEventListener('click', handleSubscribe);
+
+    await checkAuthStatus();
     initializeAdMuter();
+
+    try {
+        const isAuthenticated = await checkIsAuthenticated();
+        if (isAuthenticated) {
+            const userData = await getUserInfo();
+            showUserInfo(userData);
+            const subscriptionStatus = await getSubscriptionStatus();
+            updateSubscriptionUI(subscriptionStatus);
+        } else {
+            showView(document.getElementById('loginView'));
+        }
+    } catch (error) {
+        console.error('Error checking auth and subscription status:', error);
+        showView(document.getElementById('loginView'));
+    }
 });
+
+async function checkIsAuthenticated() {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage({action: 'getAuthStatus'}, (response) => {
+            resolve(response.isAuthenticated);
+        });
+    });
+}
 
 function showView(view) {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -102,10 +125,20 @@ function showUserInfo(userData) {
 
 function initializeAdMuter() {
     chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+        const adMuterToggle = document.getElementById('adMuterToggle');
+        const statusText = document.getElementById('statusText');
+        const statusIndicator = document.getElementById('statusIndicator');
+        
+        if (!adMuterToggle || !statusText || !statusIndicator) {
+            console.error('One or more UI elements not found in initializeAdMuter');
+            return;
+        }
+        
         const enabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-        document.getElementById('adMuterToggle').checked = enabled;
-        document.getElementById('statusText').textContent = enabled ? 'Active' : 'Inactive';
-        document.getElementById('statusIndicator').style.backgroundColor = enabled ? '#4CAF50' : '#F44336';
+        adMuterToggle.checked = enabled;
+        adMuterToggle.disabled = true; // Always start disabled
+        statusText.textContent = 'Subscription Required';
+        statusIndicator.style.backgroundColor = '#F44336'; // Red to indicate inactive
     });
 }
 
@@ -156,26 +189,30 @@ function updateSubscriptionUI(data) {
     const statusText = document.getElementById('statusText');
     const subscribeBtn = document.getElementById('subscribeBtn');
     
-    if (subscriptionInfo && adMuterToggle && statusText && subscribeBtn) {
-        if (data && data.status === 'active') {
-            subscriptionInfo.innerHTML = `
-                <p>Plan: ${data.plan}</p>
-                <p>Status: Active</p>
-                <p>Device Limit: ${data.device_limit}</p>
-                <p>Renewal Date: ${new Date(data.current_period_end).toLocaleDateString()}</p>
-            `;
-            adMuterToggle.disabled = false;
-            statusText.textContent = adMuterToggle.checked ? 'Active' : 'Inactive';
-            subscribeBtn.classList.add('hidden');
-        } else {
-            subscriptionInfo.innerHTML = `<p>No active subscription</p>`;
-            adMuterToggle.disabled = true;
-            adMuterToggle.checked = false;
-            statusText.textContent = 'Subscription Required';
-            subscribeBtn.classList.remove('hidden');
-        }
+    if (!subscriptionInfo || !adMuterToggle || !statusText || !subscribeBtn) {
+        console.error('One or more UI elements not found');
+        return;
+    }
+    
+    if (data && data.status === 'active') {
+        subscriptionInfo.innerHTML = `
+            <p>Plan: ${data.plan}</p>
+            <p>Status: Active</p>
+            <p>Device Limit: ${data.device_limit}</p>
+            <p>Renewal Date: ${new Date(data.current_period_end).toLocaleDateString()}</p>
+        `;
+        adMuterToggle.disabled = false;
+        statusText.textContent = adMuterToggle.checked ? 'Active' : 'Inactive';
+        subscribeBtn.classList.add('hidden');
+    } else {
+        subscriptionInfo.innerHTML = `<p>No active subscription</p>`;
+        adMuterToggle.disabled = true;
+        adMuterToggle.checked = false;
+        statusText.textContent = 'Subscription Required';
+        subscribeBtn.classList.remove('hidden');
     }
 }
+
 
 async function onSuccessfulLogin() {
     try {

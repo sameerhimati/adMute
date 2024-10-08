@@ -17,14 +17,19 @@ const SUPPORTED_SERVICES = [
 ];
 
 let refreshTokenTimeout;
+let isEnabled = false;
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Ad Muter extension installed');
-    chrome.storage.sync.set({ adMuterEnabled: true }, () => {
-        console.log('Ad Muter enabled by default');
+    chrome.storage.sync.set({ adMuterEnabled: false }, () => {
+        console.log('Ad Muter disabled by default');
     });
     initializeMetrics();
     checkAuthStatus();
+});
+
+chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : false;
 });
 
 function initializeMetrics() {
@@ -203,8 +208,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ isAuthenticated });
         });
         return true;
+    } else if (request.action === 'getAdMuterState') {
+        sendResponse({ isEnabled: isEnabled });
+    } else if (request.action === 'setAdMuterState') {
+        isEnabled = request.isEnabled;
+        chrome.storage.sync.set({ adMuterEnabled: isEnabled });
+        sendResponse({ success: true });
     } else if (request.action === 'muteTab') {
-        if (sender.tab) {
+        if (isEnabled && sender.tab) {
             chrome.tabs.update(sender.tab.id, { muted: true })
                 .then(() => {
                     console.log('Tab muted successfully');
@@ -215,8 +226,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: false, error: error.message });
                 });
         } else {
-            console.log('Sender tab not available for mute action.');
-            sendResponse({ success: false, error: 'Sender tab not available' });
+            console.log('Ad Muter is disabled or sender tab not available for mute action.');
+            sendResponse({ success: false, error: 'Ad Muter is disabled or sender tab not available' });
         }
         return true;
     } else if (request.action === 'unmuteTab') {
