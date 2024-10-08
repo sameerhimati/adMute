@@ -4,60 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ad Mute</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="container">
-        <h1>Ad Mute</h1>
-        
-        <div id="loginForm" class="auth-form">
-            <h2>Login</h2>
-            <input type="text" id="loginUsername" placeholder="Username" required>
-            <input type="password" id="loginPassword" placeholder="Password" required>
-            <button id="loginButton">Login</button>
-            <p>Don't have an account? <a href="#" id="showRegister">Register</a></p>
-        </div>
+        <header>
+            <h1>Ad Mute</h1>
+            <div id="statusIndicator" class="status-indicator"></div>
+        </header>
 
-        <div id="registerForm" class="auth-form hidden">
-            <h2>Register</h2>
-            <input type="text" id="registerUsername" placeholder="Username" required>
-            <input type="email" id="registerEmail" placeholder="Email" required>
-            <input type="password" id="registerPassword" placeholder="Password" required>
-            <button id="registerButton">Register</button>
-            <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
-        </div>
-
-        <div id="userInfo" class="hidden">
-            <h2>Welcome, <span id="username"></span>!</h2>
-            <button id="logoutButton">Logout</button>
-        </div>
-
-        <div id="adMuterControls" class="hidden">
-            <div class="toggle-container">
-                <label class="toggle">
-                    <input type="checkbox" id="adMuterToggle">
-                    <span class="slider"></span>
-                </label>
-                <span id="statusText" class="status">Inactive</span>
+        <main>
+            <div id="loginView" class="view">
+                <h2>Login</h2>
+                <form id="loginForm">
+                    <input type="text" id="loginUsername" placeholder="Username" required>
+                    <input type="password" id="loginPassword" placeholder="Password" required>
+                    <button type="submit" id="loginButton">Login</button>
+                </form>
+                <p>Don't have an account? <a href="#" id="showRegister">Register</a></p>
             </div>
 
-            <div class="metrics">
-                <div class="metric">
-                    Muted this month: <span id="timeMuted">0s</span>
+            <div id="registerView" class="view hidden">
+                <h2>Register</h2>
+                <form id="registerForm">
+                    <input type="text" id="registerUsername" placeholder="Username" required>
+                    <input type="email" id="registerEmail" placeholder="Email" required>
+                    <input type="password" id="registerPassword" placeholder="Password" required>
+                    <button type="submit" id="registerButton">Register</button>
+                </form>
+                <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
+            </div>
+
+            <div id="subscriptionOptions" class="hidden">
+                <h2>Choose a Subscription Plan</h2>
+                <div class="plan-option">
+                    <h3>Basic Plan</h3>
+                    <p>1 device</p>
+                    <button id="basicMonthly">$1/month</button>
+                    <button id="basicYearly">$10/year</button>
                 </div>
-                <div class="metric">
-                    Ads muted: <span id="adsMuted">0</span>
-                </div>
-                <div class="metric">
-                    Estimated time saved: <span id="timeSaved">0s</span>
+                <div class="plan-option">
+                    <h3>Premium Plan</h3>
+                    <p>Up to 5 devices</p>
+                    <button id="premiumMonthly">$3/month</button>
+                    <button id="premiumYearly">$25/year</button>
                 </div>
             </div>
 
-            <div class="supported-services">
-                Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch
+            <div id="userView" class="view hidden">
+                <h2>Welcome, <span id="username"></span>!</h2>
+                <div class="subscription-info">
+                    <h3>Subscription Status: <span id="subscriptionStatus"></span></h3>
+                    <p>Next renewal: <span id="renewalDate"></span></p>
+                </div>
+                <div class="toggle-container">
+                    <label class="switch">
+                        <input type="checkbox" id="adMuterToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span id="statusText" class="status"></span>
+                </div>
+                <div class="metrics">
+                    <div class="metric">
+                        <span>Muted this month:</span>
+                        <span id="timeMuted">0s</span>
+                    </div>
+                    <div class="metric">
+                        <span>Ads muted:</span>
+                        <span id="adsMuted">0</span>
+                    </div>
+                    <div class="metric">
+                        <span>Estimated time saved:</span>
+                        <span id="timeSaved">0s</span>
+                    </div>
+                </div>
+                <button id="subscribeBtn" class="hidden">Subscribe Now</button>
+                <button id="logoutButton">Logout</button>
             </div>
-        </div>
+        </main>
+
+        <footer>
+            <p class="supported-services">Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch</p>
+        </footer>
     </div>
-    <script type="module" src="popup.js"></script>
+    <script src="popup.js" type="module"></script>
 </body>
 </html>

@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_jwt_extended import JWTManager
+from flask_cors import CORS
 from services.stripe_service import init_stripe
 from utils.error_handlers import register_error_handlers
 
@@ -13,7 +14,8 @@ jwt = JWTManager()
 
 def create_app(config_name='development'):
     app = Flask(__name__)
-    
+    CORS(app)
+
     # Load configuration
     app.config.from_object(f'config.{config_name.capitalize()}Config')
     
@@ -30,8 +32,12 @@ def create_app(config_name='development'):
     # Register blueprints
     from routes.auth import auth_bp
     from routes.subscription import subscription_bp
+    from routes.device import device_bp
+    from routes.user import user_bp
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(subscription_bp, url_prefix='/subscription')
+    app.register_blueprint(device_bp, url_prefix='/devices')
+    app.register_blueprint(user_bp, url_prefix='/user')
     
     # Register error handlers
     register_error_handlers(app)

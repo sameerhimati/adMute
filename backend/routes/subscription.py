@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import User, Subscription
+from models import User, Subscription, Device
 from app import db
 from services.stripe_service import create_customer, create_subscription, cancel_subscription as stripe_cancel_subscription, construct_event, attach_payment_method
 from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
@@ -29,7 +29,7 @@ def subscribe():
         if not payment_method_id:
             raise BadRequest('Payment method is required')
         
-        if plan not in ['monthly', 'yearly']:
+        if plan not in ['basic_monthly', 'basic_yearly', 'premium_monthly', 'premium_yearly']:
             raise BadRequest('Invalid plan')
         
         stripe_customer = create_customer(user.email)
@@ -37,13 +37,20 @@ def subscribe():
         # Attach the payment method to the customer
         attach_payment_method(stripe_customer.id, payment_method_id)
         
-        price_id = current_app.config['MONTHLY_PRICE_ID'] if plan == 'monthly' else current_app.config['YEARLY_PRICE_ID']
+        if plan in ['basic_monthly', 'basic_yearly']:
+            price_id = current_app.config['BASIC_MONTHLY_PRICE_ID' if plan == 'basic_monthly' else 'BASIC_YEARLY_PRICE_ID']
+            device_limit = 1
+        else:
+            price_id = current_app.config['PREMIUM_MONTHLY_PRICE_ID' if plan == 'premium_monthly' else 'PREMIUM_YEARLY_PRICE_ID']
+            device_limit = 5
+
         stripe_subscription = create_subscription(stripe_customer.id, price_id, payment_method_id)
         
         subscription = Subscription(
             user_id=user.id,
             plan=plan,
             status='active',
+            device_limit=device_limit,
             stripe_customer_id=stripe_customer.id,
             stripe_subscription_id=stripe_subscription.id,
             current_period_end=datetime.fromtimestamp(stripe_subscription.current_period_end)
@@ -59,29 +66,49 @@ def subscribe():
         current_app.logger.error(f'Error in subscribe: {str(e)}')
         return jsonify({'error': 'An unexpected error occurred'}), 500
     
+from flask import jsonify, current_app
+from flask_jwt_extended import jwt_required, get_jwt_identity
+from models import User, Device
+from sqlalchemy.orm.exc import NoResultFound
+from werkzeug.exceptions import NotFound
+from app import db
+
 @subscription_bp.route('/subscription', methods=['GET'])
 @jwt_required()
 def get_subscription():
+    current_app.logger.info('Subscription route accessed')
     try:
         current_user_id = get_jwt_identity()
-        user = db.session.get(User, current_user_id)
+        current_app.logger.info(f'User ID: {current_user_id}')
         
+        user = db.session.get(User, current_user_id)
         if not user:
+            current_app.logger.warning(f'User not found: {current_user_id}')
             raise NotFound('User not found')
         
         if not user.subscription:
+            current_app.logger.info(f'No active subscription for user: {current_user_id}')
             raise NotFound('No active subscription')
         
         subscription = user.subscription
-        return jsonify({
+        devices = Device.query.filter_by(user_id=current_user_id).count()
+        
+        response_data = {
             'plan': subscription.plan,
             'status': subscription.status,
+            'device_limit': subscription.device_limit,
+            'devices_used': devices,
             'current_period_end': subscription.current_period_end.isoformat() if subscription.current_period_end else None
-        }), 200
+        }
+        
+        current_app.logger.info(f'Subscription data: {response_data}')
+        return jsonify(response_data), 200
+    
     except NotFound as e:
-        return jsonify({'error': str(e)}), e.code
+        current_app.logger.warning(f'NotFound error in get_subscription: {str(e)}')
+        return jsonify({'error': str(e)}), 404
     except Exception as e:
-        current_app.logger.error(f'Error in get_subscription: {str(e)}')
+        current_app.logger.error(f'Unexpected error in get_subscription: {str(e)}')
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
 @subscription_bp.route('/cancel', methods=['POST'])
@@ -186,20 +213,39 @@ def handle_payment_failed(payment_intent):
         current_app.logger.info(f"PaymentIntent {payment_intent['id']} not associated with a subscription")
 
 def handle_subscription_updated(subscription):
-    # Update the subscription in your database
-    pass
+    db_subscription = Subscription.query.filter_by(stripe_subscription_id=subscription.id).first()
+    if db_subscription:
+        db_subscription.status = subscription.status
+        db_subscription.current_period_end = datetime.fromtimestamp(subscription.current_period_end)
+        db.session.commit()
+        current_app.logger.info(f"Subscription {db_subscription.id} updated")
+    else:
+        current_app.logger.warning(f"No subscription found in database for Stripe subscription: {subscription.id}")
 
 def handle_invoice_paid(invoice):
-    # Update the subscription status or log the payment
-    pass
+    subscription_id = invoice.subscription
+    subscription = Subscription.query.filter_by(stripe_subscription_id=subscription_id).first()
+    if subscription:
+        subscription.status = 'active'
+        subscription.current_period_end = datetime.fromtimestamp(invoice.lines.data[0].period.end)
+        db.session.commit()
+        current_app.logger.info(f"Subscription {subscription_id} renewed")
+    else:
+        current_app.logger.warning(f"No subscription found for invoice: {invoice.id}")
 
 def handle_invoice_failed(invoice):
-    # Handle failed payment, maybe send a notification to the user
-    pass
+    subscription_id = invoice.subscription
+    subscription = Subscription.query.filter_by(stripe_subscription_id=subscription_id).first()
+    if subscription:
+        subscription.status = 'past_due'
+        db.session.commit()
+        current_app.logger.info(f"Subscription {subscription_id} marked as past due")
+        # TODO: Implement user notification for failed payment
+    else:
+        current_app.logger.warning(f"No subscription found for invoice: {invoice.id}")
 
 def handle_subscription_deleted(subscription):
     current_app.logger.info(f"Subscription deleted: {subscription.id}")
-    # Find the subscription in our database
     db_subscription = Subscription.query.filter_by(stripe_subscription_id=subscription.id).first()
     if db_subscription:
         db_subscription.status = 'cancelled'

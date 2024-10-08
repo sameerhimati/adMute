@@ -1,10 +1,12 @@
-import { decrypt, encrypt } from './crypto-utils.js';
+import { decrypt } from './utils/crypto-utils.js';
+import { 
+    getUserInfo, 
+    getSubscriptionStatus, 
+    refreshToken,
+    registerDevice,
+    updateDeviceActivity
+} from './api.js';
 
-const API_URL = 'http://localhost:5000';
-let userId;
-let refreshTokenTimeout;
-
-// List of supported streaming services
 const SUPPORTED_SERVICES = [
     { domain: 'youtube.com', name: 'YouTube' },
     { domain: 'hulu.com', name: 'Hulu' },
@@ -14,19 +16,16 @@ const SUPPORTED_SERVICES = [
     { domain: 'twitch.tv', name: 'Twitch' }
 ];
 
+let refreshTokenTimeout;
+
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Ad Muter extension installed');
-    userId = generateUserId();
-    chrome.storage.sync.set({ adMuterEnabled: true, userId: userId }, () => {
-        console.log('Ad Muter enabled by default, user ID set');
+    chrome.storage.sync.set({ adMuterEnabled: true }, () => {
+        console.log('Ad Muter enabled by default');
     });
     initializeMetrics();
     checkAuthStatus();
 });
-
-function generateUserId() {
-    return 'user_' + Math.random().toString(36).substr(2, 9);
-}
 
 function initializeMetrics() {
     chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
@@ -38,67 +37,72 @@ function initializeMetrics() {
     });
 }
 
-function checkAuthStatus() {
-    chrome.storage.local.get(['accessToken', 'tokenExpiry'], (result) => {
-        if (result.accessToken && result.tokenExpiry) {
-            const currentTime = Date.now();
-            const expiryTime = new Date(result.tokenExpiry).getTime();
-            
-            if (currentTime < expiryTime) {
-                // Token is still valid
-                scheduleTokenRefresh(expiryTime - currentTime);
-            } else {
-                // Token has expired, attempt to refresh
-                refreshToken();
-            }
-        }
-    });
-}
-
-function scheduleTokenRefresh(delay) {
-    clearTimeout(refreshTokenTimeout);
-    refreshTokenTimeout = setTimeout(refreshToken, delay);
-}
-
-async function refreshToken() {
+async function checkAuthStatus() {
     try {
-        const { refreshToken } = await new Promise((resolve) => chrome.storage.local.get(['refreshToken'], resolve));
-        const decryptedRefreshToken = decrypt(refreshToken);
-
-        const response = await fetch(`${API_URL}/auth/refresh`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ refresh_token: decryptedRefreshToken }),
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            const expiryTime = new Date(Date.now() + data.expires_in * 1000).toISOString();
-            
-            storeTokens(data.access_token, data.refresh_token, expiryTime);
-            scheduleTokenRefresh(data.expires_in * 1000);
-        } else {
-            console.log('Failed to refresh token');
-            clearTokens();
-            notifyUserReauthentication();
+        const token = await getAccessToken();
+        if (token) {
+            const userData = await getUserInfo();
+            console.log('User authenticated:', userData);
+            scheduleTokenRefresh();
+            checkDeviceRegistration();
         }
     } catch (error) {
-        console.error('Error refreshing token:', error);
-        clearTokens();
-        notifyUserReauthentication();
+        console.error('Error checking auth status:', error);
     }
 }
 
-function storeTokens(accessToken, refreshToken, expiryTime) {
-    chrome.storage.local.set({
-        accessToken: accessToken,
-        refreshToken: encrypt(refreshToken),
-        tokenExpiry: expiryTime
-    }, () => {
-        console.log('Tokens stored securely');
+function scheduleTokenRefresh() {
+    chrome.storage.local.get(['tokenExpiry'], (result) => {
+        if (result.tokenExpiry) {
+            const expiryTime = new Date(result.tokenExpiry).getTime();
+            const currentTime = Date.now();
+            const delay = expiryTime - currentTime - 300000; // Refresh 5 minutes before expiry
+            clearTimeout(refreshTokenTimeout);
+            refreshTokenTimeout = setTimeout(refreshAccessToken, delay);
+        }
     });
+}
+
+async function checkSubscriptionStatus() {
+    try {
+      const subscriptionData = await getSubscriptionStatus();
+      return subscriptionData.status === 'active';
+    } catch (error) {
+      console.error('Error checking subscription status:', error);
+      return false;
+    }
+  }
+
+async function refreshAccessToken() {
+    try {
+      const { refreshToken: encryptedRefreshToken } = await new Promise((resolve) => 
+        chrome.storage.local.get(['refreshToken'], resolve)
+      );
+      
+      if (!encryptedRefreshToken) {
+        throw new Error('No refresh token available');
+      }
+      
+      const decryptedRefreshToken = decrypt(encryptedRefreshToken);
+      const newTokens = await refreshToken(decryptedRefreshToken);
+      await storeTokens(newTokens.access_token, newTokens.refresh_token);
+      scheduleTokenRefresh();
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+      clearTokens();
+      notifyUserReauthentication();
+    }
+  }
+
+async function storeTokens(accessToken, refreshToken) {
+    const expiryTime = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour from now
+    await new Promise((resolve) => 
+        chrome.storage.local.set({
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            tokenExpiry: expiryTime
+        }, resolve)
+    );
 }
 
 function clearTokens() {
@@ -108,11 +112,87 @@ function clearTokens() {
 }
 
 function notifyUserReauthentication() {
-    chrome.notifications.create({
+    if (chrome.notifications) {
+      chrome.notifications.create({
         type: 'basic',
         iconUrl: 'icon.png',
         title: 'Ad Muter: Reauthentication Required',
         message: 'Please log in again to continue using Ad Muter.'
+      });
+    } else {
+      console.warn('Chrome notifications API is not available');
+      // You might want to implement an alternative notification method here
+    }
+  }
+
+async function checkDeviceRegistration() {
+    const deviceId = await getDeviceId();
+    const isRegistered = await getLocalStorage('isDeviceRegistered');
+    if (!isRegistered) {
+        const isSubscribed = await checkSubscriptionStatus();
+        if (isSubscribed) {
+            try {
+                await registerDevice(deviceId, navigator.platform);
+                await setLocalStorage('isDeviceRegistered', true);
+                console.log('Device registered successfully');
+            } catch (error) {
+                console.error('Failed to register device:', error);
+            }
+        } else {
+            console.log('No active subscription. Device registration not attempted.');
+        }
+    } else {
+        try {
+            await updateDeviceActivity(deviceId);
+            console.log('Device activity updated');
+        } catch (error) {
+            console.error('Failed to update device activity:', error);
+        }
+    }
+}
+
+async function getDeviceId() {
+    let deviceId = await getLocalStorage('deviceId');
+    if (!deviceId) {
+        deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
+        await setLocalStorage('deviceId', deviceId);
+    }
+    return deviceId;
+}
+
+async function getLocalStorage(key) {
+    return new Promise((resolve) => {
+        chrome.storage.local.get([key], (result) => {
+            resolve(result[key]);
+        });
+    });
+}
+
+async function setLocalStorage(key, value) {
+    return new Promise((resolve) => {
+        chrome.storage.local.set({ [key]: value }, resolve);
+    });
+}
+
+async function getAccessToken() {
+    return new Promise((resolve) => {
+        chrome.storage.local.get(['accessToken', 'tokenExpiry'], async (result) => {
+            if (result.accessToken && result.tokenExpiry) {
+                if (new Date(result.tokenExpiry) > new Date()) {
+                    resolve(result.accessToken);
+                } else {
+                    try {
+                        const newTokens = await refreshAccessToken();
+                        resolve(newTokens.access_token);
+                    } catch (error) {
+                        console.error('Error refreshing token:', error);
+                        resolve(null);
+                    }
+                }
+            } else {
+                resolve(null);
+            }
+        });
     });
 }
 
@@ -122,7 +202,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             const isAuthenticated = !!(result.accessToken && result.tokenExpiry && new Date(result.tokenExpiry) > new Date());
             sendResponse({ isAuthenticated });
         });
-        return true; // Indicates that the response is sent asynchronously
+        return true;
     } else if (request.action === 'muteTab') {
         if (sender.tab) {
             chrome.tabs.update(sender.tab.id, { muted: true })
@@ -162,34 +242,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             chrome.storage.sync.set({ timeMuted: newTimeMuted, adsMuted: newAdsMuted }, () => {
                 console.log('Metrics updated:', { timeMuted: newTimeMuted, adsMuted: newAdsMuted });
                 sendResponse({ success: true });
-            });
-        });
-        return true;
-    } else if (request.action === 'getMetrics') {
-        chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
-            sendResponse({ timeMuted: result.timeMuted || 0, adsMuted: result.adsMuted || 0 });
-        });
-        return true;
-    } else if (request.action === 'sendFeedback') {
-        chrome.storage.sync.get(['userId'], (data) => {
-            fetch(`${API_URL}/api/data`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    user_id: data.userId,
-                    feedback: request.feedback,
-                }),
-            })
-            .then(response => response.json())
-            .then(result => {
-                console.log('Feedback sent successfully:', result);
-                sendResponse({success: true});
-            })
-            .catch(error => {
-                console.error('Error sending feedback:', error);
-                sendResponse({success: false, error: error.message});
             });
         });
         return true;
