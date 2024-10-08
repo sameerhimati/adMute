@@ -171,3 +171,31 @@ export async function cancelSubscription() {
   }
   return response.json();
 }
+
+export async function createCheckoutSession(plan) {
+    const response = await getAuthenticatedRequest('/subscription/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ plan })
+    });
+    if (!response.ok) {
+      throw new Error('Failed to create checkout session');
+    }
+    return response.json();
+  }
+  
+  export async function verifySubscription(success_token) {
+    const response = await fetch(`${API_URL}/subscription/verify-subscription`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ success_token })
+    });
+    if (!response.ok) {
+      throw new Error('Failed to verify subscription');
+    }
+    return response.json();
+  }

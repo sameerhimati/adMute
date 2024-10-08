@@ -39,6 +39,8 @@ def create_app(config_name='development'):
     app.register_blueprint(device_bp, url_prefix='/devices')
     app.register_blueprint(user_bp, url_prefix='/user')
     
+    app.config['PENDING_SUBSCRIPTIONS'] = {}
+    
     # Register error handlers
     register_error_handlers(app)
     

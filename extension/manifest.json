@@ -60,7 +60,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["crypto-utils.js"],
+      "resources": ["crypto-utils.js", "subscription_success.html"],
       "matches": ["<all_urls>"]
     }
 ],

@@ -1,11 +1,13 @@
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, url_for, redirect, render_template
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from models import User, Subscription, Device
 from app import db
-from services.stripe_service import create_customer, create_subscription, cancel_subscription as stripe_cancel_subscription, construct_event, attach_payment_method
+from services.stripe_service import create_checkout_session, retrieve_checkout_session, construct_event, create_customer, create_subscription, cancel_subscription as stripe_cancel_subscription, construct_event, attach_payment_method
 from werkzeug.exceptions import BadRequest, NotFound, InternalServerError
 from stripe.error import StripeError, SignatureVerificationError
+import stripe 
 from datetime import datetime
+import uuid
 
 subscription_bp = Blueprint('subscription', __name__)
 
@@ -65,13 +67,6 @@ def subscribe():
     except Exception as e:
         current_app.logger.error(f'Error in subscribe: {str(e)}')
         return jsonify({'error': 'An unexpected error occurred'}), 500
-    
-from flask import jsonify, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from models import User, Device
-from sqlalchemy.orm.exc import NoResultFound
-from werkzeug.exceptions import NotFound
-from app import db
 
 @subscription_bp.route('/subscription', methods=['GET'])
 @jwt_required()
@@ -181,6 +176,104 @@ def webhook():
     except Exception as e:
         current_app.logger.error(f'Error in webhook: {str(e)}')
         return jsonify(error='An unexpected error occurred'), 500
+    
+@subscription_bp.route('/create-checkout-session', methods=['POST'])
+@jwt_required()
+def create_stripe_checkout_session():
+    try:
+        current_user_id = get_jwt_identity()
+        user = db.session.get(User, current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        data = request.json
+        plan = data.get('plan')
+        
+        if plan not in ['basic_monthly', 'basic_yearly', 'premium_monthly', 'premium_yearly']:
+            return jsonify({'error': 'Invalid plan'}), 400
+        
+        success_token = str(uuid.uuid4())
+        session = create_checkout_session(user.id, plan, success_token)
+        
+        # Store success_token in server-side session or database
+        current_app.config['PENDING_SUBSCRIPTIONS'][success_token] = {
+            'user_id': user.id,
+            'plan': plan,
+            'created_at': datetime.utcnow()
+        }
+        
+        return jsonify({'sessionId': session.id, 'url': session.url})
+    except Exception as e:
+        current_app.logger.error(f'Error creating checkout session: {str(e)}')
+        return jsonify({'error': 'Failed to create checkout session'}), 500
+
+@subscription_bp.route('/subscription-success')
+def subscription_success():
+    session_id = request.args.get('session_id')
+    success_token = request.args.get('success_token')
+    
+    if not session_id or not success_token:
+        return jsonify({'error': 'Invalid session ID or success token'}), 400
+
+    pending_sub = current_app.config['PENDING_SUBSCRIPTIONS'].get(success_token)
+    if not pending_sub:
+        return jsonify({'error': 'Invalid or expired success token'}), 400
+
+    try:
+        session = retrieve_checkout_session(session_id)
+        user = User.query.get(pending_sub['user_id'])
+        plan = pending_sub['plan']
+
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        device_limit = 5 if plan.startswith('premium') else 1
+
+        subscription = Subscription(
+            user_id=user.id,
+            plan=plan,
+            status='active',
+            device_limit=device_limit,
+            stripe_customer_id=session.customer,
+            stripe_subscription_id=session.subscription,
+            current_period_end=datetime.fromtimestamp(session.subscription.current_period_end)
+        )
+        db.session.add(subscription)
+        db.session.commit()
+
+        # Remove the pending subscription
+        del current_app.config['PENDING_SUBSCRIPTIONS'][success_token]
+
+        return render_template('subscription_success.html', success_token=success_token)
+    except Exception as e:
+        current_app.logger.error(f'Error processing subscription success: {str(e)}')
+        return jsonify({'error': 'Failed to process subscription'}), 500
+    
+@subscription_bp.route('/verify-subscription', methods=['POST'])
+def verify_subscription():
+    success_token = request.json.get('success_token')
+    if not success_token:
+        return jsonify({'error': 'No success token provided'}), 400
+
+    pending_sub = current_app.config['PENDING_SUBSCRIPTIONS'].get(success_token)
+    if not pending_sub:
+        return jsonify({'error': 'Invalid or expired success token'}), 400
+
+    user = User.query.get(pending_sub['user_id'])
+    if not user or not user.subscription:
+        return jsonify({'error': 'No active subscription found'}), 404
+
+    return jsonify({
+        'status': 'active',
+        'plan': user.subscription.plan,
+        'device_limit': user.subscription.device_limit,
+        'current_period_end': user.subscription.current_period_end.isoformat()
+    }), 200
+
+@subscription_bp.route('/subscription-cancel')
+def subscription_cancel():
+    return redirect(url_for('subscription.get_subscription'))
 
 def handle_payment_succeeded(payment_intent):
     current_app.logger.info(f"Payment succeeded for PaymentIntent: {payment_intent['id']}")

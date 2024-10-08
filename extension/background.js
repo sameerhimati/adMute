@@ -208,14 +208,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ isAuthenticated });
         });
         return true;
-    } else if (request.action === 'getAdMuterState') {
-        sendResponse({ isEnabled: isEnabled });
-    } else if (request.action === 'setAdMuterState') {
-        isEnabled = request.isEnabled;
-        chrome.storage.sync.set({ adMuterEnabled: isEnabled });
-        sendResponse({ success: true });
+    } else if (request.action === 'SubscriptionUpdated') {
+        chrome.storage.local.get(['subscriptionStatus', 'subscriptionPlan', 'deviceLimit', 'subscriptionEnd'], (result) => {
+            isEnabled = result.subscriptionStatus === 'active';
+            console.log('Subscription updated:', result);
+        });
     } else if (request.action === 'muteTab') {
-        if (isEnabled && sender.tab) {
+        if (sender.tab) {
             chrome.tabs.update(sender.tab.id, { muted: true })
                 .then(() => {
                     console.log('Tab muted successfully');
@@ -226,8 +225,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                     sendResponse({ success: false, error: error.message });
                 });
         } else {
-            console.log('Ad Muter is disabled or sender tab not available for mute action.');
-            sendResponse({ success: false, error: 'Ad Muter is disabled or sender tab not available' });
+            console.log('Sender tab not available for mute action.');
+            sendResponse({ success: false, error: 'Sender tab not available' });
         }
         return true;
     } else if (request.action === 'unmuteTab') {

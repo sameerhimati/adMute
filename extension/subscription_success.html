@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Subscription Confirmed</title>
+    <script>
+        window.opener.postMessage({ type: 'subscription_success', success_token: '{{ success_token }}' }, '*');
+        window.close();
+    </script>
+</head>
+<body>
+    <h1>Subscription Confirmed</h1>
+    <p>Your subscription has been successfully processed. You can close this window now.</p>
+</body>
+</html>

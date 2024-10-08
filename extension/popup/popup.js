@@ -6,75 +6,48 @@ import {
     register, 
     refreshToken,
     getDevices,
-    registerDevice
+    registerDevice,
+    createCheckoutSession, 
+    verifySubscription
 } from '../api.js';
 
-document.addEventListener('DOMContentLoaded', async () => {
-    const loginView = document.getElementById('loginView');
-    const registerView = document.getElementById('registerView');
-    const userView = document.getElementById('userView');
-    const showRegisterLink = document.getElementById('showRegister');
-    const showLoginLink = document.getElementById('showLogin');
-    const loginForm = document.getElementById('loginForm');
-    const registerForm = document.getElementById('registerForm');
-    const logoutButton = document.getElementById('logoutButton');
-    const toggleButton = document.getElementById('adMuterToggle');
-    const subscribeBtn = document.getElementById('subscribeBtn');
+// Event Listeners
+document.addEventListener('DOMContentLoaded', initializePopup);
 
-    showRegisterLink.addEventListener('click', () => showView(registerView));
-    showLoginLink.addEventListener('click', () => showView(loginView));
-    loginForm.addEventListener('submit', handleLogin);
-    registerForm.addEventListener('submit', handleRegister);
-    logoutButton.addEventListener('click', handleLogout);
-    toggleButton.addEventListener('change', handleToggle);
-    subscribeBtn.addEventListener('click', handleSubscribe);
-
+// Initialization
+async function initializePopup() {
+    setupEventListeners();
     await checkAuthStatus();
     initializeAdMuter();
+}
 
-    try {
-        const isAuthenticated = await checkIsAuthenticated();
-        if (isAuthenticated) {
-            const userData = await getUserInfo();
-            showUserInfo(userData);
-            const subscriptionStatus = await getSubscriptionStatus();
-            updateSubscriptionUI(subscriptionStatus);
-        } else {
-            showView(document.getElementById('loginView'));
-        }
-    } catch (error) {
-        console.error('Error checking auth and subscription status:', error);
-        showView(document.getElementById('loginView'));
-    }
-});
-
-async function checkIsAuthenticated() {
-    return new Promise((resolve) => {
-        chrome.runtime.sendMessage({action: 'getAuthStatus'}, (response) => {
-            resolve(response.isAuthenticated);
-        });
+function setupEventListeners() {
+    document.getElementById('showRegister').addEventListener('click', () => showView('registerView'));
+    document.getElementById('showLogin').addEventListener('click', () => showView('loginView'));
+    document.getElementById('loginForm').addEventListener('submit', handleLogin);
+    document.getElementById('registerForm').addEventListener('submit', handleRegister);
+    document.getElementById('logoutButton').addEventListener('click', handleLogout);
+    document.getElementById('adMuterToggle').addEventListener('change', handleToggle);
+    document.getElementById('subscribeBtn').addEventListener('click', showSubscriptionOptions);
+    document.querySelectorAll('.plan-option').forEach(option => {
+        option.addEventListener('click', handlePlanSelection);
     });
 }
 
-function showView(view) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    view.classList.add('active');
-}
-
+// Authentication
 async function checkAuthStatus() {
     try {
         const token = await getAccessToken();
         if (!token) {
-            showView(document.getElementById('loginView'));
+            showView('loginView');
             return;
         }
-
         const userData = await getUserInfo();
         showUserInfo(userData);
         await onSuccessfulLogin();
     } catch (error) {
         console.error('Error checking auth status:', error);
-        showView(document.getElementById('loginView'));
+        showView('loginView');
     }
 }
 
@@ -114,105 +87,9 @@ async function handleRegister(e) {
 function handleLogout() {
     chrome.storage.local.remove(['accessToken', 'refreshToken', 'tokenExpiry'], () => {
         clearUserData();
-        showView(document.getElementById('loginView'));
+        showView('loginView');
     });
 }
-
-function showUserInfo(userData) {
-    document.getElementById('username').textContent = userData.username;
-    showView(document.getElementById('userView'));
-}
-
-function initializeAdMuter() {
-    chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-        const adMuterToggle = document.getElementById('adMuterToggle');
-        const statusText = document.getElementById('statusText');
-        const statusIndicator = document.getElementById('statusIndicator');
-        
-        if (!adMuterToggle || !statusText || !statusIndicator) {
-            console.error('One or more UI elements not found in initializeAdMuter');
-            return;
-        }
-        
-        const enabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-        adMuterToggle.checked = enabled;
-        adMuterToggle.disabled = true; // Always start disabled
-        statusText.textContent = 'Subscription Required';
-        statusIndicator.style.backgroundColor = '#F44336'; // Red to indicate inactive
-    });
-}
-
-function handleToggle() {
-    const enabled = document.getElementById('adMuterToggle').checked;
-    const statusText = document.getElementById('statusText');
-    
-    if (!document.getElementById('adMuterToggle').disabled) {
-        statusText.textContent = enabled ? 'Active' : 'Inactive';
-        document.getElementById('statusIndicator').style.backgroundColor = enabled ? '#4CAF50' : '#F44336';
-
-        chrome.storage.sync.set({ adMuterEnabled: enabled }, () => {
-            console.log('Ad Muter state saved:', enabled);
-        });
-
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleAdMuter', enabled }, (response) => {
-                    if (chrome.runtime.lastError) {
-                        console.log('Error:', chrome.runtime.lastError.message);
-                    } else if (response && response.success) {
-                        console.log('Ad Muter toggled successfully');
-                        updateMetrics();
-                    }
-                });
-            } else {
-                console.log('No active tabs found.');
-            }
-        });
-    }
-}
-
-async function checkSubscriptionStatus() {
-    try {
-      const data = await getSubscriptionStatus();
-      updateSubscriptionUI(data);
-      return data.status === 'active';
-    } catch (error) {
-      console.error('Error checking subscription status:', error);
-      updateSubscriptionUI(null);
-      return false;
-    }
-}
-
-function updateSubscriptionUI(data) {
-    const subscriptionInfo = document.getElementById('subscriptionInfo');
-    const adMuterToggle = document.getElementById('adMuterToggle');
-    const statusText = document.getElementById('statusText');
-    const subscribeBtn = document.getElementById('subscribeBtn');
-    
-    if (!subscriptionInfo || !adMuterToggle || !statusText || !subscribeBtn) {
-        console.error('One or more UI elements not found');
-        return;
-    }
-    
-    if (data && data.status === 'active') {
-        subscriptionInfo.innerHTML = `
-            <p>Plan: ${data.plan}</p>
-            <p>Status: Active</p>
-            <p>Device Limit: ${data.device_limit}</p>
-            <p>Renewal Date: ${new Date(data.current_period_end).toLocaleDateString()}</p>
-        `;
-        adMuterToggle.disabled = false;
-        statusText.textContent = adMuterToggle.checked ? 'Active' : 'Inactive';
-        subscribeBtn.classList.add('hidden');
-    } else {
-        subscriptionInfo.innerHTML = `<p>No active subscription</p>`;
-        adMuterToggle.disabled = true;
-        adMuterToggle.checked = false;
-        statusText.textContent = 'Subscription Required';
-        subscribeBtn.classList.remove('hidden');
-    }
-}
-
 
 async function onSuccessfulLogin() {
     try {
@@ -232,18 +109,131 @@ async function onSuccessfulLogin() {
     }
 }
 
-function handleSubscribe() {
-    const placeholderUrl = `http://localhost:5000/placeholder-subscribe?time=${Date.now()}`;
-    window.open(placeholderUrl, '_blank');
+// Subscription
+async function checkSubscriptionStatus() {
+    try {
+        const data = await getSubscriptionStatus();
+        updateSubscriptionUI(data);
+        return data.status === 'active';
+    } catch (error) {
+        console.error('Error checking subscription status:', error);
+        updateSubscriptionUI(null);
+        return false;
+    }
 }
 
-async function fetchDevices() {
-    try {
-        const data = await getDevices();
-        updateDevicesUI(data);
-    } catch (error) {
-        showError('Failed to fetch device information');
+function showSubscriptionOptions() {
+    document.getElementById('subscriptionOptions').classList.remove('hidden');
+}
+
+async function handlePlanSelection(event) {
+    const selectedPlan = event.currentTarget.dataset.plan;
+    if (!selectedPlan) {
+        console.error('No plan selected');
+        return;
     }
+
+    try {
+        const { url } = await createCheckoutSession(selectedPlan);
+        const checkoutWindow = window.open(url, '_blank');
+        
+        window.addEventListener('message', async function(event) {
+            if (event.data.type === 'subscription_success') {
+                const success_token = event.data.success_token;
+                try {
+                    const subscriptionData = await verifySubscription(success_token);
+                    updateSubscriptionStatus(subscriptionData);
+                    checkoutWindow.close();
+                } catch (error) {
+                    console.error('Error verifying subscription:', error);
+                    showError('Failed to verify subscription. Please try again or contact support.');
+                }
+            }
+        }, false);
+    } catch (error) {
+        console.error('Error creating checkout session:', error);
+        showError('Failed to start subscription process. Please try again.');
+    }
+}
+
+function updateSubscriptionStatus(data) {
+    chrome.storage.local.set({
+        subscriptionStatus: data.status,
+        subscriptionPlan: data.plan,
+        deviceLimit: data.device_limit,
+        subscriptionEnd: data.current_period_end
+    }, function() {
+        updateUI();
+        chrome.runtime.sendMessage({ action: 'subscriptionUpdated' });
+    });
+}
+
+// UI Updates
+function showView(viewId) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById(viewId).classList.add('active');
+}
+
+function showUserInfo(userData) {
+    document.getElementById('username').textContent = userData.username;
+    showView('userView');
+}
+
+function updateUI() {
+    updateSubscriptionUI();
+    updateToggleUI();
+    updateMetrics();
+}
+
+function updateSubscriptionUI() {
+    chrome.storage.local.get(['subscriptionStatus', 'subscriptionPlan', 'deviceLimit', 'subscriptionEnd'], (result) => {
+        const subscriptionInfo = document.getElementById('subscriptionInfo');
+        const subscribeBtn = document.getElementById('subscribeBtn');
+        
+        if (result.subscriptionStatus === 'active') {
+            subscriptionInfo.innerHTML = `
+                <p>Plan: ${result.subscriptionPlan}</p>
+                <p>Status: Active</p>
+                <p>Device Limit: ${result.deviceLimit}</p>
+                <p>Renewal Date: ${new Date(result.subscriptionEnd).toLocaleDateString()}</p>
+            `;
+            subscribeBtn.classList.add('hidden');
+        } else {
+            subscriptionInfo.innerHTML = `<p>No active subscription</p>`;
+            subscribeBtn.classList.remove('hidden');
+        }
+    });
+}
+
+function updateToggleUI() {
+    chrome.storage.local.get(['subscriptionStatus', 'adMuterEnabled'], (result) => {
+        const adMuterToggle = document.getElementById('adMuterToggle');
+        const statusText = document.getElementById('statusText');
+        const statusIndicator = document.getElementById('statusIndicator');
+        
+        if (result.subscriptionStatus === 'active') {
+            adMuterToggle.disabled = false;
+            adMuterToggle.checked = result.adMuterEnabled;
+            statusText.textContent = result.adMuterEnabled ? 'Active' : 'Inactive';
+            statusIndicator.style.backgroundColor = result.adMuterEnabled ? '#4CAF50' : '#F44336';
+        } else {
+            adMuterToggle.disabled = true;
+            adMuterToggle.checked = false;
+            statusText.textContent = 'Subscription Required';
+            statusIndicator.style.backgroundColor = '#F44336';
+        }
+    });
+}
+
+function updateMetrics() {
+    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
+        const timeMuted = result.timeMuted || 0;
+        const adsMuted = result.adsMuted || 0;
+        
+        document.getElementById('timeMuted').textContent = formatTime(timeMuted);
+        document.getElementById('adsMuted').textContent = adsMuted;
+        document.getElementById('timeSaved').textContent = formatTime(Math.round(timeMuted * 0.8));
+    });
 }
 
 function updateDevicesUI(data) {
@@ -262,41 +252,33 @@ function updateDevicesUI(data) {
     }
 }
 
-function updateMetrics() {
-    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
-        const timeMuted = result.timeMuted || 0;
-        const adsMuted = result.adsMuted || 0;
-        
-        document.getElementById('timeMuted').textContent = formatTime(timeMuted);
-        document.getElementById('adsMuted').textContent = adsMuted;
-        document.getElementById('timeSaved').textContent = formatTime(Math.round(timeMuted * 0.8));
+// Ad Muter
+function initializeAdMuter() {
+    chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+        const enabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : false;
+        chrome.storage.sync.set({ adMuterEnabled: enabled }, () => {
+            updateToggleUI();
+        });
     });
 }
 
-function formatTime(seconds) {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}m ${remainingSeconds}s`;
+function handleToggle() {
+    const enabled = document.getElementById('adMuterToggle').checked;
+    chrome.storage.sync.set({ adMuterEnabled: enabled }, () => {
+        console.log('Ad Muter state saved:', enabled);
+        updateToggleUI();
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs.length > 0) {
+                chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleAdMuter', enabled });
+            }
+        });
+    });
 }
 
-function clearUserData() {
-    document.getElementById('timeMuted').textContent = '0s';
-    document.getElementById('adsMuted').textContent = '0';
-    document.getElementById('timeSaved').textContent = '0s';
-    if (document.getElementById('subscriptionInfo')) {
-        document.getElementById('subscriptionInfo').innerHTML = '';
-    }
-    if (document.getElementById('deviceList')) {
-        document.getElementById('deviceList').innerHTML = '';
-    }
-    if (document.getElementById('deviceCount')) {
-        document.getElementById('deviceCount').textContent = '0 / 0';
-    }
-}
-
+// Utilities
 async function getAccessToken() {
     return new Promise((resolve) => {
-        chrome.storage.local.get(['accessToken', 'tokenExpiry'], async (result) => {
+        chrome.storage.local.get(['accessToken', 'tokenExpiry', 'refreshToken'], async (result) => {
             if (result.accessToken && result.tokenExpiry) {
                 if (new Date(result.tokenExpiry) > new Date()) {
                     resolve(result.accessToken);
@@ -328,16 +310,6 @@ async function storeTokens(accessToken, refreshToken) {
     );
 }
 
-function showError(message) {
-    const errorElement = document.createElement('div');
-    errorElement.className = 'error-message';
-    errorElement.textContent = message;
-    document.body.appendChild(errorElement);
-    setTimeout(() => {
-        errorElement.remove();
-    }, 3000);
-}
-
 async function getDeviceId() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['deviceId'], (result) => {
@@ -351,4 +323,44 @@ async function getDeviceId() {
             }
         });
     });
+}
+
+async function fetchDevices() {
+    try {
+        const data = await getDevices();
+        updateDevicesUI(data);
+    } catch (error) {
+        showError('Failed to fetch device information');
+    }
+}
+
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+}
+
+function clearUserData() {
+    document.getElementById('timeMuted').textContent = '0s';
+    document.getElementById('adsMuted').textContent = '0';
+    document.getElementById('timeSaved').textContent = '0s';
+    if (document.getElementById('subscriptionInfo')) {
+        document.getElementById('subscriptionInfo').innerHTML = '';
+    }
+    if (document.getElementById('deviceList')) {
+        document.getElementById('deviceList').innerHTML = '';
+    }
+    if (document.getElementById('deviceCount')) {
+        document.getElementById('deviceCount').textContent = '0 / 0';
+    }
+}
+
+function showError(message) {
+    const errorElement = document.createElement('div');
+    errorElement.className = 'error-message';
+    errorElement.textContent = message;
+    document.body.appendChild(errorElement);
+    setTimeout(() => {
+        errorElement.remove();
+    }, 3000);
 }
