@@ -1,23 +1,36 @@
 let adObserver = null;
-let isEnabled = true;
+let isAdMuterEnabled = false;
 let isMuted = false;
 let isAdPlaying = false;
 let adStartTime = 0;
 let lastKnownVideoTime = 0;
 let lastKnownVideoDuration = 0;
 let consecutiveAdChecks = 0;
-const AD_CHECK_THRESHOLD = 3;  // Number of consecutive checks before confirming ad state change
+const AD_CHECK_THRESHOLD = 3;
 
-// Load the saved state
-chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-    if (isEnabled) {
-        initAdDetection();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'updateAdMuterState') {
+        isAdMuterEnabled = request.enabled;
+        if (isAdMuterEnabled) {
+            initAdDetection();
+        } else {
+            stopAdDetection();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === 'initializeAdDetection') {
+        chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+            isAdMuterEnabled = result.adMuterEnabled;
+            if (isAdMuterEnabled) {
+                initAdDetection();
+            }
+            sendResponse({ success: true });
+        });
     }
+    return true;
 });
 
 function checkForHuluAds() {
-    if (!isEnabled) return;
+    if (!isAdMuterEnabled) return;
 
     try {
         const adDetected = checkVisualAdMarkers() || 
@@ -74,14 +87,12 @@ function checkPlayerStateChanges() {
 }
 
 function checkAudioLevels() {
-    // This is a placeholder for audio level analysis
-    // Implementing this would require using the Web Audio API
+    // Placeholder for audio level analysis
     return false;
 }
 
 function checkNetworkRequests() {
-    // This is a placeholder for network request analysis
-    // Implementing this would require setting up a network request observer
+    // Placeholder for network request analysis
     return false;
 }
 
@@ -152,17 +163,18 @@ function initAdDetection() {
 
     function observePlayer() {
         const playerContainer = document.querySelector('#content-video-player') || document.body;
-        adObserver.observe(playerContainer, config);
-        console.log('Observing Hulu player container');
-        checkForHuluAds(); // Initial check
-        console.log('Hulu ad detection initialized');
+        if (playerContainer) {
+            console.log('Player container found, initializing ad detection');
+            adObserver.observe(playerContainer, config);
+        } else {
+            console.log('Player container not found, will retry');
+            setTimeout(observePlayer, 1000); // Retry after 1 second
+        }
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', observePlayer);
-    } else {
-        observePlayer();
-    }
+    observePlayer();
+
+    console.log('Hulu ad detection initialized');
 
     // Set up periodic checks
     setInterval(checkForHuluAds, 1000);
@@ -176,22 +188,12 @@ function stopAdDetection() {
     console.log('Hulu ad detection stopped');
 }
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'toggleAdMuter') {
-        isEnabled = request.enabled;
-        console.log('Ad Muter toggled on Hulu:', isEnabled);
-        if (isEnabled) {
-            initAdDetection();
-        } else {
-            stopAdDetection();
-        }
-        sendResponse({ success: true });
+// Initialize on load
+chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+    isAdMuterEnabled = result.adMuterEnabled === true;
+    if (isAdMuterEnabled) {
+        initAdDetection();
     }
-    return true;  // Indicates that the response is sent asynchronously
 });
-
-// Initial load
-initAdDetection();
 
 console.log('Hulu content script loaded');

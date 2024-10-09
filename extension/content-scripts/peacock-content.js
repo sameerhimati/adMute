@@ -1,20 +1,34 @@
 let adObserver = null;
-let isEnabled = true;
+let isAdMuterEnabled = false;
 let isMuted = false;
 let isAdPlaying = false;
 let adStartTime = 0;
 let adDuration = 0;
-const AD_CHECK_INTERVAL = 500; // Check every 500ms
+const AD_CHECK_INTERVAL = 500;
 
-chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-    if (isEnabled) {
-        initAdDetection();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'updateAdMuterState') {
+        isAdMuterEnabled = request.enabled;
+        if (isAdMuterEnabled) {
+            initAdDetection();
+        } else {
+            stopAdDetection();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === 'initializeAdDetection') {
+        chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+            isAdMuterEnabled = result.adMuterEnabled;
+            if (isAdMuterEnabled) {
+                initAdDetection();
+            }
+            sendResponse({ success: true });
+        });
     }
+    return true;
 });
 
 function checkForPeacockAds() {
-    if (!isEnabled) return;
+    if (!isAdMuterEnabled) return;
 
     const adCountdown = document.querySelector('.countdown__foreground-ring');
     const adCountdownContainer = document.querySelector('.countdown-container.ad-countdown__container');
@@ -89,7 +103,6 @@ function initAdDetection() {
     adObserver = new MutationObserver(checkForPeacockAds);
     const config = { childList: true, subtree: true, attributes: true };
 
-    // Observe the entire document for changes
     adObserver.observe(document.documentElement, config);
     console.log('Peacock ad detection initialized');
 
@@ -105,20 +118,12 @@ function stopAdDetection() {
     console.log('Peacock ad detection stopped');
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'toggleAdMuter') {
-        isEnabled = request.enabled;
-        console.log('Ad Muter toggled on Peacock:', isEnabled);
-        if (isEnabled) {
-            initAdDetection();
-        } else {
-            stopAdDetection();
-        }
-        sendResponse({ success: true });
+// Initialize on load
+chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+    isAdMuterEnabled = result.adMuterEnabled === true;
+    if (isAdMuterEnabled) {
+        initAdDetection();
     }
-    return true;
 });
-
-initAdDetection();
 
 console.log('Peacock content script loaded');

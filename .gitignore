@@ -11,6 +11,10 @@ package.json
 # Ignore node modules
 node_modules/
 
+instance/*
+
+*.db
+
 # Ignore build artifacts
 build/
 dist/

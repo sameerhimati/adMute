@@ -1,19 +1,33 @@
 let adObserver = null;
-let isEnabled = true;
+let isAdMuterEnabled = false;
 let isMuted = false;
 let isAdPlaying = false;
 let adStartTime = 0;
-const AD_CHECK_INTERVAL = 500; // Check every 500ms
+const AD_CHECK_INTERVAL = 500;
 
-chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-    if (isEnabled) {
-        initAdDetection();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'updateAdMuterState') {
+        isAdMuterEnabled = request.enabled;
+        if (isAdMuterEnabled) {
+            initAdDetection();
+        } else {
+            stopAdDetection();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === 'initializeAdDetection') {
+        chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+            isAdMuterEnabled = result.adMuterEnabled;
+            if (isAdMuterEnabled) {
+                initAdDetection();
+            }
+            sendResponse({ success: true });
+        });
     }
+    return true;
 });
 
 function checkForTwitchAds() {
-    if (!isEnabled) return;
+    if (!isAdMuterEnabled) return;
 
     const adDetected = checkVisualAdMarkers();
 
@@ -103,19 +117,9 @@ function initAdDetection() {
     });
     const config = { childList: true, subtree: true, attributes: true, characterData: true };
 
-    function observePlayer() {
-        const playerContainer = document.querySelector('.video-player') || document.body;
-        adObserver.observe(playerContainer, config);
-        console.log('Observing Twitch player container');
-        checkForTwitchAds(); // Initial check
-        console.log('Twitch ad detection initialized');
-    }
-
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', observePlayer);
-    } else {
-        observePlayer();
-    }
+    const playerContainer = document.querySelector('.video-player') || document.body;
+    adObserver.observe(playerContainer, config);
+    console.log('Twitch ad detection initialized');
 
     // Set up periodic checks
     setInterval(checkForTwitchAds, AD_CHECK_INTERVAL);
@@ -129,20 +133,12 @@ function stopAdDetection() {
     console.log('Twitch ad detection stopped');
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'toggleAdMuter') {
-        isEnabled = request.enabled;
-        console.log('Ad Muter toggled on Twitch:', isEnabled);
-        if (isEnabled) {
-            initAdDetection();
-        } else {
-            stopAdDetection();
-        }
-        sendResponse({ success: true });
+// Initialize on load
+chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+    isAdMuterEnabled = result.adMuterEnabled === true;
+    if (isAdMuterEnabled) {
+        initAdDetection();
     }
-    return true;
 });
-
-initAdDetection();
 
 console.log('Twitch content script loaded');

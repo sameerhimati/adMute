@@ -1,10 +1,8 @@
-import { decrypt } from './utils/crypto-utils.js';
+import { encrypt, decrypt } from './utils/crypto-utils.js';
 import { 
     getUserInfo, 
     getSubscriptionStatus, 
-    refreshToken,
-    registerDevice,
-    updateDeviceActivity
+    refreshToken
 } from './api.js';
 
 const SUPPORTED_SERVICES = [
@@ -17,7 +15,6 @@ const SUPPORTED_SERVICES = [
 ];
 
 let refreshTokenTimeout;
-let isEnabled = false;
 
 chrome.runtime.onInstalled.addListener(() => {
     console.log('Ad Muter extension installed');
@@ -26,10 +23,6 @@ chrome.runtime.onInstalled.addListener(() => {
     });
     initializeMetrics();
     checkAuthStatus();
-});
-
-chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : false;
 });
 
 function initializeMetrics() {
@@ -46,10 +39,18 @@ async function checkAuthStatus() {
     try {
         const token = await getAccessToken();
         if (token) {
-            const userData = await getUserInfo();
-            console.log('User authenticated:', userData);
-            scheduleTokenRefresh();
-            checkDeviceRegistration();
+            try {
+                const userData = await getUserInfo();
+                console.log('User authenticated:', userData);
+                scheduleTokenRefresh();
+                await checkSubscriptionStatus();
+            } catch (error) {
+                console.error('Error fetching user info:', error);
+                // If user info fetch fails, clear the tokens as they might be invalid
+                clearTokens();
+            }
+        } else {
+            console.log('No valid token found, user needs to log in');
         }
     } catch (error) {
         console.error('Error checking auth status:', error);
@@ -70,43 +71,68 @@ function scheduleTokenRefresh() {
 
 async function checkSubscriptionStatus() {
     try {
-      const subscriptionData = await getSubscriptionStatus();
-      return subscriptionData.status === 'active';
+        const subscriptionData = await getSubscriptionStatus();
+        if (!subscriptionData) {
+            throw new Error('Invalid response from subscription status endpoint');
+        }
+        chrome.storage.sync.set({ 
+            subscriptionStatus: subscriptionData.status,
+            subscriptionPlan: subscriptionData.plan,
+            deviceLimit: subscriptionData.device_limit,
+            subscriptionEnd: subscriptionData.current_period_end
+        }, () => {
+            console.log('Subscription status updated:', subscriptionData.status);
+            chrome.runtime.sendMessage({ action: 'subscriptionUpdated' });
+        });
+        return subscriptionData.status === 'active';
     } catch (error) {
-      console.error('Error checking subscription status:', error);
-      return false;
+        console.error('Error checking subscription status:', error);
+        return false;
     }
-  }
+}
 
 async function refreshAccessToken() {
     try {
-      const { refreshToken: encryptedRefreshToken } = await new Promise((resolve) => 
-        chrome.storage.local.get(['refreshToken'], resolve)
-      );
-      
-      if (!encryptedRefreshToken) {
-        throw new Error('No refresh token available');
-      }
-      
-      const decryptedRefreshToken = decrypt(encryptedRefreshToken);
-      const newTokens = await refreshToken(decryptedRefreshToken);
-      await storeTokens(newTokens.access_token, newTokens.refresh_token);
-      scheduleTokenRefresh();
+        const { refreshToken: encryptedRefreshToken } = await new Promise((resolve) => 
+            chrome.storage.local.get(['refreshToken'], resolve)
+        );
+        
+        if (!encryptedRefreshToken) {
+            throw new Error('No refresh token available');
+        }
+        
+        const decryptedRefreshToken = decrypt(encryptedRefreshToken);
+        console.log('Attempting to refresh token...');
+        const newTokens = await refreshToken(decryptedRefreshToken);
+        console.log('Refresh token response:', newTokens);
+        
+        if (!newTokens || !newTokens.access_token) {
+            throw new Error('Invalid response from refresh token endpoint');
+        }
+        await storeTokens(newTokens.access_token, newTokens.refresh_token);
+        scheduleTokenRefresh();
+        console.log('Token refreshed and stored successfully');
+        return newTokens.access_token;
     } catch (error) {
-      console.error('Error refreshing token:', error);
-      clearTokens();
-      notifyUserReauthentication();
+        console.error('Error refreshing token:', error);
+        clearTokens();
+        notifyUserReauthentication();
+        return null;
     }
-  }
+}
+
 
 async function storeTokens(accessToken, refreshToken) {
     const expiryTime = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour from now
-    await new Promise((resolve) => 
+    return new Promise((resolve) => 
         chrome.storage.local.set({
-            accessToken: accessToken,
-            refreshToken: refreshToken,
+            accessToken: encrypt(accessToken),
+            refreshToken: encrypt(refreshToken),
             tokenExpiry: expiryTime
-        }, resolve)
+        }, () => {
+            console.log('Tokens stored successfully');
+            resolve();
+        })
     );
 }
 
@@ -118,65 +144,15 @@ function clearTokens() {
 
 function notifyUserReauthentication() {
     if (chrome.notifications) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon.png',
-        title: 'Ad Muter: Reauthentication Required',
-        message: 'Please log in again to continue using Ad Muter.'
-      });
-    } else {
-      console.warn('Chrome notifications API is not available');
-      // You might want to implement an alternative notification method here
-    }
-  }
-
-async function checkDeviceRegistration() {
-    const deviceId = await getDeviceId();
-    const isRegistered = await getLocalStorage('isDeviceRegistered');
-    if (!isRegistered) {
-        const isSubscribed = await checkSubscriptionStatus();
-        if (isSubscribed) {
-            try {
-                await registerDevice(deviceId, navigator.platform);
-                await setLocalStorage('isDeviceRegistered', true);
-                console.log('Device registered successfully');
-            } catch (error) {
-                console.error('Failed to register device:', error);
-            }
-        } else {
-            console.log('No active subscription. Device registration not attempted.');
-        }
-    } else {
-        try {
-            await updateDeviceActivity(deviceId);
-            console.log('Device activity updated');
-        } catch (error) {
-            console.error('Failed to update device activity:', error);
-        }
-    }
-}
-
-async function getDeviceId() {
-    let deviceId = await getLocalStorage('deviceId');
-    if (!deviceId) {
-        deviceId = 'dev_' + Math.random().toString(36).substr(2, 9);
-        await setLocalStorage('deviceId', deviceId);
-    }
-    return deviceId;
-}
-
-async function getLocalStorage(key) {
-    return new Promise((resolve) => {
-        chrome.storage.local.get([key], (result) => {
-            resolve(result[key]);
+        chrome.notifications.create({
+            type: 'basic',
+            iconUrl: 'icon.png',
+            title: 'Ad Muter: Reauthentication Required',
+            message: 'Please log in again to continue using Ad Muter.'
         });
-    });
-}
-
-async function setLocalStorage(key, value) {
-    return new Promise((resolve) => {
-        chrome.storage.local.set({ [key]: value }, resolve);
-    });
+    } else {
+        console.warn('Chrome notifications API is not available');
+    }
 }
 
 async function getAccessToken() {
@@ -186,13 +162,8 @@ async function getAccessToken() {
                 if (new Date(result.tokenExpiry) > new Date()) {
                     resolve(result.accessToken);
                 } else {
-                    try {
-                        const newTokens = await refreshAccessToken();
-                        resolve(newTokens.access_token);
-                    } catch (error) {
-                        console.error('Error refreshing token:', error);
-                        resolve(null);
-                    }
+                    const newAccessToken = await refreshAccessToken();
+                    resolve(newAccessToken);
                 }
             } else {
                 resolve(null);
@@ -201,53 +172,68 @@ async function getAccessToken() {
     });
 }
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'getAuthStatus') {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'getAccessToken') {
+        getAccessToken().then(sendResponse);
+        return true;
+    } else if (message.action === 'refreshAccessToken') {
+        refreshAccessToken().then(sendResponse);
+        return true;
+    } else if (message.action === 'getAuthStatus') {
         chrome.storage.local.get(['accessToken', 'tokenExpiry'], (result) => {
             const isAuthenticated = !!(result.accessToken && result.tokenExpiry && new Date(result.tokenExpiry) > new Date());
             sendResponse({ isAuthenticated });
         });
         return true;
-    } else if (request.action === 'SubscriptionUpdated') {
-        chrome.storage.local.get(['subscriptionStatus', 'subscriptionPlan', 'deviceLimit', 'subscriptionEnd'], (result) => {
-            isEnabled = result.subscriptionStatus === 'active';
-            console.log('Subscription updated:', result);
+    } else if (message.action === 'getAdMuterState') {
+        chrome.storage.sync.get('adMuterEnabled', (data) => {
+            sendResponse({ enabled: data.adMuterEnabled });
         });
-    } else if (request.action === 'muteTab') {
-        if (sender.tab) {
-            chrome.tabs.update(sender.tab.id, { muted: true })
-                .then(() => {
-                    console.log('Tab muted successfully');
-                    sendResponse({ success: true });
-                })
-                .catch((error) => {
-                    console.log('Error muting tab:', error);
-                    sendResponse({ success: false, error: error.message });
-                });
-        } else {
-            console.log('Sender tab not available for mute action.');
-            sendResponse({ success: false, error: 'Sender tab not available' });
-        }
         return true;
-    } else if (request.action === 'unmuteTab') {
-        if (sender.tab) {
-            chrome.tabs.update(sender.tab.id, { muted: false })
-                .then(() => {
-                    console.log('Tab unmuted successfully');
-                    sendResponse({ success: true });
-                })
-                .catch((error) => {
-                    console.log('Error unmuting tab:', error);
-                    sendResponse({ success: false, error: error.message });
+    } else if (message.action === 'setAdMuterState') {
+        chrome.storage.sync.set({ adMuterEnabled: message.enabled }, () => {
+            chrome.tabs.query({}, (tabs) => {
+                tabs.forEach((tab) => {
+                    chrome.tabs.sendMessage(tab.id, { action: 'updateAdMuterState', enabled: message.enabled })
+                        .catch(() => {}); // Ignore errors for tabs that can't receive messages
                 });
-        } else {
-            console.log('Sender tab not available for unmute action.');
-            sendResponse({ success: false, error: 'Sender tab not available' });
-        }
+            });
+            sendResponse({ success: true });
+        });
         return true;
-    } else if (request.action === 'updateMetrics') {
+    } else if (message.action === 'subscriptionUpdated') {
+        checkSubscriptionStatus()
+            .then(() => sendResponse({ success: true }))
+            .catch((error) => sendResponse({ success: false, error: error.message }));
+        return true;
+    } else if (message.action === 'contentScriptReady') {
+        console.log(`Content script ready in tab ${sender.tab.id}`);
+        sendResponse({ success: true });
+    } else if (message.action === 'muteTab') {
+        chrome.tabs.update(sender.tab.id, { muted: true }, () => {
+            if (chrome.runtime.lastError) {
+                console.error('Error muting tab:', chrome.runtime.lastError);
+                sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+                console.log('Tab muted successfully');
+                sendResponse({ success: true });
+            }
+        });
+        return true;
+    } else if (message.action === 'unmuteTab') {
+        chrome.tabs.update(sender.tab.id, { muted: false }, () => {
+            if (chrome.runtime.lastError) {
+                console.error('Error unmuting tab:', chrome.runtime.lastError);
+                sendResponse({ success: false, error: chrome.runtime.lastError.message });
+            } else {
+                console.log('Tab unmuted successfully');
+                sendResponse({ success: true });
+            }
+        });
+        return true;
+    } else if (message.action === 'updateMetrics') {
         chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
-            const newTimeMuted = (result.timeMuted || 0) + request.muteDuration;
+            const newTimeMuted = (result.timeMuted || 0) + message.muteDuration;
             const newAdsMuted = (result.adsMuted || 0) + 1;
             chrome.storage.sync.set({ timeMuted: newTimeMuted, adsMuted: newAdsMuted }, () => {
                 console.log('Metrics updated:', { timeMuted: newTimeMuted, adsMuted: newAdsMuted });
@@ -256,17 +242,49 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         });
         return true;
     }
+    // Return false if the message wasn't handled
+    return false;
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url) {
         const service = SUPPORTED_SERVICES.find(s => tab.url.includes(s.domain));
         if (service) {
-            chrome.tabs.sendMessage(tabId, { action: 'checkForAds', service: service.name })
-                .then(() => console.log(`Sent checkForAds message to tab for ${service.name}`))
-                .catch(error => console.log(`Error sending message to tab for ${service.name}:`, error));
+            chrome.storage.sync.get(['adMuterEnabled', 'subscriptionStatus'], (result) => {
+                if (result.subscriptionStatus === 'active' && result.adMuterEnabled) {
+                    // Wait for the content script to be ready
+                    const checkContentScriptReady = () => {
+                        chrome.tabs.sendMessage(tabId, { action: 'ping' }, response => {
+                            if (chrome.runtime.lastError) {
+                                // Content script not ready, try again after a short delay
+                                setTimeout(checkContentScriptReady, 100);
+                            } else {
+                                // Content script is ready, send the initialization message
+                                chrome.tabs.sendMessage(tabId, { action: 'initializeAdDetection', service: service.name }, response => {
+                                    if (chrome.runtime.lastError) {
+                                        console.error(`Error initializing ad detection for ${service.name} in tab ${tabId}:`, chrome.runtime.lastError);
+                                    } else if (response && response.success) {
+                                        console.log(`Ad detection initialized for ${service.name} in tab ${tabId}`);
+                                    }
+                                });
+                            }
+                        });
+                    };
+
+                    // Start checking if the content script is ready
+                    checkContentScriptReady();
+                }
+            });
         }
     }
 });
+
+function isTabReady(tabId) {
+    return new Promise((resolve) => {
+        chrome.tabs.get(tabId, (tab) => {
+            resolve(tab && tab.status === 'complete');
+        });
+    });
+}
 
 console.log('Background script loaded');

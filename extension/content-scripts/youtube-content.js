@@ -1,23 +1,32 @@
 let adObserver = null;
-let isEnabled = false;
+let isAdMuterEnabled = false;
 let isMuted = false;
 let isAdPlaying = false;
 let adStartTime = 0;
 
-// Load the saved state
-chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-    isEnabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
-    if (isEnabled) {
-        initAdDetection();
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'updateAdMuterState') {
+        isAdMuterEnabled = request.enabled;
+        if (isAdMuterEnabled) {
+            initAdDetection();
+        } else {
+            stopAdDetection();
+        }
+        sendResponse({ success: true });
+    } else if (request.action === 'initializeAdDetection') {
+        chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+            isAdMuterEnabled = result.adMuterEnabled;
+            if (isAdMuterEnabled) {
+                initAdDetection();
+            }
+            sendResponse({ success: true });
+        });
     }
-});
-
-chrome.runtime.sendMessage({action: 'getAdMuterState'}, (response) => {
-    isEnabled = response.isEnabled;
+    return true;
 });
 
 function checkForYouTubeAds() {
-    if (!isEnabled) return;
+    if (!isAdMuterEnabled) return;
 
     try {
         const adOverlay = document.querySelector('.ytp-ad-player-overlay, .video-ads.ytp-ad-module');
@@ -55,9 +64,7 @@ function checkForYouTubeAds() {
 }
 
 function handleAdStart() {
-
-    if (!isEnabled) return;
-
+    if (!isAdMuterEnabled) return;
     
     console.log('Ad detected, attempting to mute tab');
     chrome.runtime.sendMessage({ action: 'muteTab' })
@@ -176,23 +183,22 @@ function initAdDetection() {
     const config = { childList: true, subtree: true };
 
     function observePlayer() {
-        const playerContainer = document.querySelector('#player-container');
+        const playerContainer = document.querySelector('#player-container') || document.body;
         if (playerContainer) {
+            console.log('Player container found, initializing ad detection');
             adObserver.observe(playerContainer, config);
-            console.log('Observing player container');
         } else {
-            console.log('Player container not found, observing body');
-            adObserver.observe(document.body, config);
+            console.log('Player container not found, will retry');
+            setTimeout(observePlayer, 1000); // Retry after 1 second
         }
-        checkForYouTubeAds(); // Initial check
-        console.log('Ad detection initialized');
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', observePlayer);
-    } else {
-        observePlayer();
-    }
+    observePlayer();
+
+    console.log('YouTube ad detection initialized');
+
+    // Set up periodic checks
+    setInterval(checkForYouTubeAds, 1000);
 }
 
 function stopAdDetection() {
@@ -200,27 +206,15 @@ function stopAdDetection() {
         adObserver.disconnect();
         adObserver = null;
     }
-    console.log('Ad detection stopped');
+    console.log('YouTube ad detection stopped');
 }
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'toggleAdMuter') {
-        isEnabled = request.enabled;
-        console.log('Ad Muter toggled:', isEnabled);
-        if (isEnabled) {
-            initAdDetection();
-        } else {
-            stopAdDetection();
-        }
-        sendResponse({ success: true });
+// Initialize on load
+chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+    isAdMuterEnabled = result.adMuterEnabled === true;
+    if (isAdMuterEnabled) {
+        initAdDetection();
     }
 });
-
-// Initial load
-initAdDetection();
-
-// Check for ads every second as a fallback
-setInterval(checkForYouTubeAds, 1000);
 
 console.log('YouTube content script loaded');

@@ -7,18 +7,47 @@ import {
     refreshToken,
     getDevices,
     registerDevice,
-    createCheckoutSession, 
-    verifySubscription
+    createCheckoutSession
 } from '../api.js';
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initializePopup);
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'subscriptionUpdated') {
+        updateUI();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    const toggle = document.getElementById('adMuterToggle');
+    
+    chrome.runtime.sendMessage({ action: 'getAdMuterState' }, (response) => {
+      toggle.checked = response.enabled;
+    });
+    
+    toggle.addEventListener('change', (event) => {
+      chrome.runtime.sendMessage({ action: 'setAdMuterState', enabled: event.target.checked });
+    });
+  });
 
 // Initialization
 async function initializePopup() {
     setupEventListeners();
-    await checkAuthStatus();
-    initializeAdMuter();
+    try {
+        const isAuthenticated = await checkAuthStatus();
+        if (isAuthenticated) {
+            await checkSubscriptionStatus();
+            initializeAdMuter();
+            updateUI();
+        } else {
+            console.log('User not authenticated, showing login view');
+            showView('loginView');
+        }
+    } catch (error) {
+        console.error('Error initializing popup:', error);
+        showView('loginView');
+        showError('Please log in to use the extension.');
+    }
 }
 
 function setupEventListeners() {
@@ -37,17 +66,23 @@ function setupEventListeners() {
 // Authentication
 async function checkAuthStatus() {
     try {
+        console.log('Checking auth status...');
         const token = await getAccessToken();
         if (!token) {
+            console.log('No valid token found, showing login view');
             showView('loginView');
-            return;
+            return false;
         }
+        console.log('Token found, fetching user info...');
         const userData = await getUserInfo();
+        console.log('User info received:', userData);
         showUserInfo(userData);
         await onSuccessfulLogin();
+        return true;
     } catch (error) {
         console.error('Error checking auth status:', error);
         showView('loginView');
+        return false;
     }
 }
 
@@ -93,13 +128,41 @@ function handleLogout() {
 
 async function onSuccessfulLogin() {
     try {
-        const isSubscribed = await checkSubscriptionStatus();
+        console.log('Fetching subscription status after login...');
+        const subscriptionData = await getSubscriptionStatus();
+        console.log('Subscription data received:', subscriptionData);
+        
+        if (subscriptionData.status === 'inactive') {
+            console.log('No active subscription');
+            chrome.storage.sync.set({ subscriptionStatus: 'inactive' }, () => {
+                updateSubscriptionUI({ status: 'inactive' });
+                updateToggleUI();
+            });
+        } else {
+            console.log('Active subscription found');
+            chrome.storage.sync.set({ 
+                subscriptionStatus: 'active',
+                subscriptionPlan: subscriptionData.plan,
+                deviceLimit: subscriptionData.device_limit,
+                subscriptionEnd: subscriptionData.current_period_end
+            }, () => {
+                updateSubscriptionUI(subscriptionData);
+                updateToggleUI();
+            });
+        }
+        
         updateMetrics();
-        if (isSubscribed) {
+        
+        if (subscriptionData.status === 'active') {
+            console.log('Fetching devices...');
             await fetchDevices();
             const deviceId = await getDeviceId();
-            await registerDevice(deviceId, navigator.platform);
-            console.log('Login and device registration successful');
+            try {
+                await registerDevice(deviceId, navigator.platform);
+                console.log('Device registration successful');
+            } catch (error) {
+                console.log('Device registration failed, but continuing: ', error);
+            }
         } else {
             console.log('Login successful, but no active subscription');
         }
@@ -109,19 +172,36 @@ async function onSuccessfulLogin() {
     }
 }
 
-// Subscription
 async function checkSubscriptionStatus() {
     try {
-        const data = await getSubscriptionStatus();
-        updateSubscriptionUI(data);
-        return data.status === 'active';
+        const subscriptionData = await getSubscriptionStatus();
+        if (!subscriptionData) {
+            throw new Error('Invalid response from subscription status endpoint');
+        }
+        chrome.storage.sync.set({ 
+            subscriptionStatus: subscriptionData.status,
+            subscriptionPlan: subscriptionData.plan,
+            deviceLimit: subscriptionData.device_limit,
+            subscriptionEnd: subscriptionData.current_period_end
+        }, () => {
+            console.log('Popup: Subscription status updated:', subscriptionData.status);
+            updateUI();
+        });
+        return subscriptionData.status === 'active';
     } catch (error) {
-        console.error('Error checking subscription status:', error);
-        updateSubscriptionUI(null);
+        console.error('Popup: Error checking subscription status:', error);
+        if (error.message === 'No access token available' || error.message === 'Failed to refresh token') {
+            // User is not logged in or token refresh failed
+            showView('loginView');
+            showError('Please log in to check your subscription status.');
+        } else {
+            showError('Failed to fetch subscription status. Please try again.');
+        }
         return false;
     }
 }
 
+// Subscription
 function showSubscriptionOptions() {
     document.getElementById('subscriptionOptions').classList.remove('hidden');
 }
@@ -137,35 +217,44 @@ async function handlePlanSelection(event) {
         const { url } = await createCheckoutSession(selectedPlan);
         const checkoutWindow = window.open(url, '_blank');
         
-        window.addEventListener('message', async function(event) {
-            if (event.data.type === 'subscription_success') {
-                const success_token = event.data.success_token;
-                try {
-                    const subscriptionData = await verifySubscription(success_token);
-                    updateSubscriptionStatus(subscriptionData);
-                    checkoutWindow.close();
-                } catch (error) {
-                    console.error('Error verifying subscription:', error);
-                    showError('Failed to verify subscription. Please try again or contact support.');
-                }
+        // Set up an interval to check the subscription status
+        const checkSubscriptionStatus = setInterval(async () => {
+            if (checkoutWindow.closed) {
+                clearInterval(checkSubscriptionStatus);
+                await verifyAndUpdateSubscription();
             }
-        }, false);
+        }, 1000); // Check every second
+
     } catch (error) {
         console.error('Error creating checkout session:', error);
         showError('Failed to start subscription process. Please try again.');
     }
 }
 
-function updateSubscriptionStatus(data) {
-    chrome.storage.local.set({
-        subscriptionStatus: data.status,
-        subscriptionPlan: data.plan,
-        deviceLimit: data.device_limit,
-        subscriptionEnd: data.current_period_end
-    }, function() {
-        updateUI();
-        chrome.runtime.sendMessage({ action: 'subscriptionUpdated' });
-    });
+async function verifyAndUpdateSubscription() {
+    try {
+        const subscriptionData = await getSubscriptionStatus();
+        chrome.storage.sync.get(['adMuterEnabled'], (result) => {
+            chrome.storage.sync.set({ 
+                subscriptionStatus: subscriptionData.status,
+                subscriptionPlan: subscriptionData.plan,
+                deviceLimit: subscriptionData.device_limit,
+                subscriptionEnd: subscriptionData.current_period_end,
+                adMuterEnabled: subscriptionData.status === 'active' ? (result.adMuterEnabled !== undefined ? result.adMuterEnabled : true) : false
+            }, () => {
+                console.log('Subscription status updated:', subscriptionData.status);
+                updateUI();
+                if (subscriptionData.status === 'active') {
+                    showMessage('Subscription activated successfully!');
+                } else {
+                    showMessage('Subscription process incomplete. Please try again or contact support.');
+                }
+            });
+        });
+    } catch (error) {
+        console.error('Error verifying subscription:', error);
+        showError('Failed to verify subscription. Please check your account or contact support.');
+    }
 }
 
 // UI Updates
@@ -186,10 +275,12 @@ function updateUI() {
 }
 
 function updateSubscriptionUI() {
-    chrome.storage.local.get(['subscriptionStatus', 'subscriptionPlan', 'deviceLimit', 'subscriptionEnd'], (result) => {
+    chrome.storage.sync.get(['subscriptionStatus', 'subscriptionPlan', 'deviceLimit', 'subscriptionEnd'], (result) => {
         const subscriptionInfo = document.getElementById('subscriptionInfo');
         const subscribeBtn = document.getElementById('subscribeBtn');
         
+        console.log('Updating subscription UI with:', result);
+
         if (result.subscriptionStatus === 'active') {
             subscriptionInfo.innerHTML = `
                 <p>Plan: ${result.subscriptionPlan}</p>
@@ -206,16 +297,19 @@ function updateSubscriptionUI() {
 }
 
 function updateToggleUI() {
-    chrome.storage.local.get(['subscriptionStatus', 'adMuterEnabled'], (result) => {
+    chrome.storage.sync.get(['adMuterEnabled', 'subscriptionStatus'], (result) => {
         const adMuterToggle = document.getElementById('adMuterToggle');
         const statusText = document.getElementById('statusText');
         const statusIndicator = document.getElementById('statusIndicator');
         
+        console.log('UpdateToggleUI - Subscription status:', result.subscriptionStatus);
+        console.log('UpdateToggleUI - AdMuter enabled:', result.adMuterEnabled);
+        
         if (result.subscriptionStatus === 'active') {
             adMuterToggle.disabled = false;
-            adMuterToggle.checked = result.adMuterEnabled;
-            statusText.textContent = result.adMuterEnabled ? 'Active' : 'Inactive';
-            statusIndicator.style.backgroundColor = result.adMuterEnabled ? '#4CAF50' : '#F44336';
+            adMuterToggle.checked = result.adMuterEnabled !== undefined ? result.adMuterEnabled : true;
+            statusText.textContent = adMuterToggle.checked ? 'Active' : 'Inactive';
+            statusIndicator.style.backgroundColor = adMuterToggle.checked ? '#4CAF50' : '#F44336';
         } else {
             adMuterToggle.disabled = true;
             adMuterToggle.checked = false;
@@ -254,11 +348,22 @@ function updateDevicesUI(data) {
 
 // Ad Muter
 function initializeAdMuter() {
-    chrome.storage.sync.get(['adMuterEnabled'], (result) => {
-        const enabled = result.adMuterEnabled !== undefined ? result.adMuterEnabled : false;
-        chrome.storage.sync.set({ adMuterEnabled: enabled }, () => {
-            updateToggleUI();
-        });
+    chrome.storage.sync.get(['adMuterEnabled', 'subscriptionStatus'], (result) => {
+        console.log('InitializeAdMuter - Subscription status:', result.subscriptionStatus);
+        console.log('InitializeAdMuter - AdMuter enabled:', result.adMuterEnabled);
+        
+        const isSubscribed = result.subscriptionStatus === 'active';
+        let enabled = result.adMuterEnabled;
+
+        if (isSubscribed) {
+            if (enabled === undefined) {
+                enabled = true; // Default to true for new subscribers
+            }
+        } else {
+            enabled = false; // Always false for non-subscribers
+        }
+
+        chrome.storage.sync.set({ adMuterEnabled: enabled }, updateToggleUI);
     });
 }
 
@@ -267,11 +372,7 @@ function handleToggle() {
     chrome.storage.sync.set({ adMuterEnabled: enabled }, () => {
         console.log('Ad Muter state saved:', enabled);
         updateToggleUI();
-        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs.length > 0) {
-                chrome.tabs.sendMessage(tabs[0].id, { action: 'toggleAdMuter', enabled });
-            }
-        });
+        chrome.runtime.sendMessage({ action: 'updateAdMuterState', enabled });
     });
 }
 
@@ -280,19 +381,26 @@ async function getAccessToken() {
     return new Promise((resolve) => {
         chrome.storage.local.get(['accessToken', 'tokenExpiry', 'refreshToken'], async (result) => {
             if (result.accessToken && result.tokenExpiry) {
+                const decryptedAccessToken = decrypt(result.accessToken);
                 if (new Date(result.tokenExpiry) > new Date()) {
-                    resolve(result.accessToken);
+                    resolve(decryptedAccessToken);
                 } else {
                     try {
-                        const newToken = await refreshToken(decrypt(result.refreshToken));
-                        await storeTokens(newToken.access_token, newToken.refresh_token);
-                        resolve(newToken.access_token);
+                        const decryptedRefreshToken = decrypt(result.refreshToken);
+                        const newTokens = await refreshToken(decryptedRefreshToken);
+                        if (!newTokens || !newTokens.access_token) {
+                            throw new Error('Invalid response from refresh token endpoint');
+                        }
+                        await storeTokens(newTokens.access_token, newTokens.refresh_token);
+                        resolve(newTokens.access_token);
                     } catch (error) {
                         console.error('Error refreshing token:', error);
+                        showError('Failed to refresh authentication. Please log in again.');
                         resolve(null);
                     }
                 }
             } else {
+                console.log('No access token found in storage');
                 resolve(null);
             }
         });
@@ -303,10 +411,13 @@ async function storeTokens(accessToken, refreshToken) {
     const expiryTime = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour from now
     await new Promise((resolve) => 
         chrome.storage.local.set({
-            accessToken: accessToken,
+            accessToken: encrypt(accessToken),
             refreshToken: encrypt(refreshToken),
             tokenExpiry: expiryTime
-        }, resolve)
+        }, () => {
+            console.log('Tokens stored successfully');
+            resolve();
+        })
     );
 }
 
@@ -363,4 +474,14 @@ function showError(message) {
     setTimeout(() => {
         errorElement.remove();
     }, 3000);
+}
+
+function showMessage(message) {
+    const messageElement = document.createElement('div');
+    messageElement.className = 'message';
+    messageElement.textContent = message;
+    document.body.appendChild(messageElement);
+    setTimeout(() => {
+        messageElement.remove();
+    }, 5000);
 }

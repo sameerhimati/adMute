@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
@@ -13,7 +13,7 @@ bcrypt = Bcrypt()
 jwt = JWTManager()
 
 def create_app(config_name='development'):
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder='templates')
     CORS(app)
 
     # Load configuration
@@ -38,9 +38,6 @@ def create_app(config_name='development'):
     app.register_blueprint(subscription_bp, url_prefix='/subscription')
     app.register_blueprint(device_bp, url_prefix='/devices')
     app.register_blueprint(user_bp, url_prefix='/user')
-    
-    app.config['PENDING_SUBSCRIPTIONS'] = {}
-    
     # Register error handlers
     register_error_handlers(app)
     
