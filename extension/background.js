@@ -2,7 +2,8 @@ import { encrypt, decrypt } from './utils/crypto-utils.js';
 import { 
     getUserInfo, 
     getSubscriptionStatus, 
-    refreshToken
+    refreshToken,
+    updateUserMetrics
 } from './api.js';
 
 const SUPPORTED_SERVICES = [
@@ -44,9 +45,14 @@ async function checkAuthStatus() {
                 console.log('User authenticated:', userData);
                 scheduleTokenRefresh();
                 await checkSubscriptionStatus();
+                // Fetch and set the metrics from the server
+                const metrics = await getUserMetrics();
+                chrome.storage.sync.set({ 
+                    timeMuted: metrics.total_muted_time, 
+                    adsMuted: metrics.total_ads_muted 
+                });
             } catch (error) {
                 console.error('Error fetching user info:', error);
-                // If user info fetch fails, clear the tokens as they might be invalid
                 clearTokens();
             }
         } else {
@@ -90,6 +96,21 @@ async function checkSubscriptionStatus() {
         return false;
     }
 }
+
+async function sendMetricsToServer() {
+    try {
+        const { timeMuted, adsMuted } = await new Promise((resolve) => 
+            chrome.storage.sync.get(['timeMuted', 'adsMuted'], resolve)
+        );
+        
+        await updateUserMetrics({ timeMuted, adsMuted });
+        console.log('Metrics sent to server successfully');
+    } catch (error) {
+        console.error('Error sending metrics to server:', error);
+    }
+}
+
+setInterval(sendMetricsToServer, 5 * 60 * 1000);
 
 async function refreshAccessToken() {
     try {
@@ -241,6 +262,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
         });
         return true;
+    } else if (message.action === 'logout') {
+        sendMetricsToServer().then(() => {
+            clearTokens();
+            sendResponse({ success: true });
+        }).catch((error) => {
+            console.error('Error during logout:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        return true; // Indicate that we'll send a response asynchronously
     }
     // Return false if the message wasn't handled
     return false;

@@ -107,19 +107,27 @@ async function getAuthenticatedRequest(endpoint, options = {}) {
     return data;
   }
 
-export async function updateUserMetrics(metrics) {
-  const response = await getAuthenticatedRequest('/user/metrics', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(metrics)
-  });
-  if (!response.ok) {
-    throw new Error('Failed to update user metrics');
+  export async function updateUserMetrics(metrics) {
+    const response = await getAuthenticatedRequest('/user/metrics', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(metrics)
+    });
+    if (!response.ok) {
+      throw new Error('Failed to update user metrics');
+    }
+    return response.json();
   }
-  return response.json();
-}
+
+  export async function getUserMetrics() {
+    const response = await getAuthenticatedRequest('/user/metrics');
+    if (!response.ok) {
+      throw new Error('Failed to fetch user metrics');
+    }
+    return response.json();
+  }
 
 export async function getSubscriptionStatus() {
     try {

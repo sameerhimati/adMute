@@ -7,7 +7,9 @@ import {
     refreshToken,
     getDevices,
     registerDevice,
-    createCheckoutSession
+    createCheckoutSession,
+    updateUserMetrics,
+    getUserMetrics
 } from '../api.js';
 
 // Event Listeners
@@ -119,11 +121,15 @@ async function handleRegister(e) {
     }
 }
 
-function handleLogout() {
-    chrome.storage.local.remove(['accessToken', 'refreshToken', 'tokenExpiry'], () => {
+async function handleLogout() {
+    try {
+        await chrome.runtime.sendMessage({ action: 'logout' });
         clearUserData();
         showView('loginView');
-    });
+    } catch (error) {
+        console.error('Error during logout:', error);
+        showError('An error occurred during logout. Please try again.');
+    }
 }
 
 async function onSuccessfulLogin() {
@@ -319,15 +325,21 @@ function updateToggleUI() {
     });
 }
 
-function updateMetrics() {
-    chrome.storage.sync.get(['timeMuted', 'adsMuted'], (result) => {
-        const timeMuted = result.timeMuted || 0;
-        const adsMuted = result.adsMuted || 0;
-        
-        document.getElementById('timeMuted').textContent = formatTime(timeMuted);
-        document.getElementById('adsMuted').textContent = adsMuted;
-        document.getElementById('timeSaved').textContent = formatTime(Math.round(timeMuted * 0.8));
-    });
+async function updateMetrics() {
+    try {
+        const metrics = await getUserMetrics();
+        chrome.storage.sync.set({ 
+            timeMuted: metrics.total_muted_time, 
+            adsMuted: metrics.total_ads_muted 
+        }, () => {
+            document.getElementById('timeMuted').textContent = formatTime(metrics.total_muted_time);
+            document.getElementById('adsMuted').textContent = metrics.total_ads_muted;
+            document.getElementById('timeSaved').textContent = formatTime(Math.round(metrics.total_muted_time * 0.8));
+        });
+    } catch (error) {
+        console.error('Error fetching user metrics:', error);
+        showError('Failed to fetch user metrics. Please try again.');
+    }
 }
 
 function updateDevicesUI(data) {

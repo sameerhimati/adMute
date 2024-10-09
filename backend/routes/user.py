@@ -5,24 +5,25 @@ from app import db
 
 user_bp = Blueprint('user', __name__)
 
-@user_bp.route('/metrics', methods=['POST'])
+@user_bp.route('/metrics', methods=['GET', 'POST'])
 @jwt_required()
-def update_user_metrics():
-    try:
-        current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
-        
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-        
+def user_metrics():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if request.method == 'POST':
         metrics = request.json
-        # Update user metrics here. You'll need to add appropriate fields to your User model.
-        # For example:
-        # user.total_muted_time = metrics.get('totalMutedTime', user.total_muted_time)
-        # user.total_ads_muted = metrics.get('totalAdsMuted', user.total_ads_muted)
+        user.total_muted_time = metrics.get('timeMuted', user.total_muted_time)
+        user.total_ads_muted = metrics.get('adsMuted', user.total_ads_muted)
         
         db.session.commit()
         
         return jsonify({'message': 'User metrics updated successfully'}), 200
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    else:  # GET request
+        return jsonify({
+            'total_muted_time': user.total_muted_time,
+            'total_ads_muted': user.total_ads_muted
+        }), 200
