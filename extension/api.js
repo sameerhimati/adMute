@@ -209,26 +209,38 @@ export async function login(username, password) {
     if (!response.ok) {
       const errorData = await response.json();
       console.error('Login failed:', response.status, errorData);
+      if (response.status === 401) {
+        if (errorData.message.includes('User not found')) {
+          throw new Error('User not found');
+        } else if (errorData.message.includes('Incorrect password')) {
+          throw new Error('Incorrect password');
+        }
+      }
       throw new Error(`Login failed: ${errorData.message || response.statusText}`);
     }
     const data = await response.json();
     console.log('Login successful, received tokens');
     return data;
-  }
-
-export async function register(username, email, password) {
-  const response = await fetch(`${API_URL}/auth/register`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ username, email, password })
-  });
-  if (!response.ok) {
-    throw new Error('Registration failed');
-  }
-  return response.json();
 }
+
+  export async function register(username, email, password) {
+    const response = await fetch(`${API_URL}/auth/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username, email, password })
+    });
+    if (!response.ok) {
+      const errorData = await response.json();
+      if (response.status === 400) {
+        throw new Error('Username or email already exists');
+      }
+      throw new Error(errorData.message || 'Registration failed');
+    }
+    return response.json();
+  }
+  
 
 export async function refreshToken(refreshToken) {
     try {

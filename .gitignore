@@ -11,8 +11,6 @@ package.json
 # Ignore node modules
 node_modules/
 
-backend/instance/
-
 *.db
 
 # Ignore build artifacts

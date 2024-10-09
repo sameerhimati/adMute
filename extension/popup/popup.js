@@ -100,7 +100,13 @@ async function handleLogin(e) {
         showUserInfo({ username });
     } catch (error) {
         console.error('Login error:', error);
-        showError('An error occurred during login');
+        if (error.message.includes('User not found')) {
+            showError('No account found with this username. Please check your credentials or register a new account.');
+        } else if (error.message.includes('Incorrect password')) {
+            showError('Incorrect password. Please try again.');
+        } else {
+            showError('An error occurred during login. Please try again later.');
+        }
     }
 }
 
@@ -117,7 +123,11 @@ async function handleRegister(e) {
         showUserInfo({ username });
     } catch (error) {
         console.error('Registration error:', error);
-        showError('An error occurred during registration');
+        if (error.message.includes('Username or email already exists')) {
+            showError('This username or email is already registered. Please choose a different one or log in.');
+        } else {
+            showError('An error occurred during registration. Please try again later.');
+        }
     }
 }
 
@@ -479,13 +489,16 @@ function clearUserData() {
 }
 
 function showError(message) {
-    const errorElement = document.createElement('div');
-    errorElement.className = 'error-message';
-    errorElement.textContent = message;
-    document.body.appendChild(errorElement);
-    setTimeout(() => {
-        errorElement.remove();
-    }, 3000);
+    const errorNotification = document.getElementById('errorNotification');
+    const errorMessage = document.getElementById('errorMessage');
+    const closeError = document.getElementById('closeError');
+
+    errorMessage.textContent = message;
+    errorNotification.classList.remove('hidden');
+
+    closeError.addEventListener('click', () => {
+        errorNotification.classList.add('hidden');
+    });
 }
 
 function showMessage(message) {

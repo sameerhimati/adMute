@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ad Mute</title>
-    <link rel="stylesheet" href="popup.css">
+    <link href="popup.css" rel="stylesheet">
 </head>
 <body>
     <div class="container">
@@ -13,7 +13,7 @@
             <div id="statusIndicator" class="status-indicator"></div>
         </header>
 
-        <main role="main">
+        <main>
             <div id="loginView" class="view">
                 <h2>Login</h2>
                 <form id="loginForm">
@@ -66,35 +66,45 @@
                     </div>
                 </div>
 
-                <button id="subscribeBtn" class="hidden">Subscribe Now</button>
+                <button id="subscribeBtn">Subscribe Now</button>
 
                 <div id="subscriptionOptions" class="hidden">
                     <h3>Choose a Subscription Plan</h3>
-                    <div class="plan-option" data-plan="basic_monthly">
-                      <h4>1 device</h4>
-                      <p>$1/month</p>
+                    <div class="plan-options">
+                        <div class="plan-option" data-plan="basic_monthly">
+                            <h4>$1/month</h4>
+                            <p>1 device</p>
+                        </div>
+                        <div class="plan-option" data-plan="basic_yearly">
+                            <h4>$10/year</h4>
+                            <p>1 device</p>
+                        </div>
+                        <div class="plan-option" data-plan="premium_monthly">
+                            <h4>$3/month</h4>
+                            <p>Unlimited devices</p>
+                        </div>
+                        <div class="plan-option" data-plan="premium_yearly">
+                            <h4>$25/year</h4>
+                            <p>Unlimited devices</p>
+                        </div>
                     </div>
-                    <div class="plan-option" data-plan="basic_yearly">
-                      <h4>1 device</h4>
-                      <p>$10/year</p>
-                    </div>
-                    <div class="plan-option" data-plan="premium_monthly">
-                      <h4>Up to 5 devices</h4>
-                      <p>$3/month</p>
-                    </div>
-                    <div class="plan-option" data-plan="premium_yearly">
-                      <h4>Up to 5 devices</h4>
-                      <p>$25/year</p>
-                    </div>
-                  </div>
+                </div>
 
                 <button id="logoutButton">Logout</button>
             </div>
         </main>
 
         <footer>
-            <p>Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch</p>
+            Supported services: YouTube, Hulu, Peacock, Paramount+, HBO Max, Twitch
         </footer>
+    </div>
+
+    <div id="errorNotification" class="error-notification hidden">
+        <div class="error-content">
+            <h3>Error</h3>
+            <p id="errorMessage"></p>
+            <button id="closeError">Close</button>
+        </div>
     </div>
 
     <script src="../utils/crypto-utils.js" type="module"></script>
