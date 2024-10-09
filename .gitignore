@@ -11,7 +11,7 @@ package.json
 # Ignore node modules
 node_modules/
 
-instance/*
+backend/instance/
 
 *.db
 
